@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom"; // ADD THESE IMPORTS
 import { Section, FadeIn } from "@/components/ui/layout-components";
 import { CATEGORIES } from "@/data/portfolio";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,10 @@ export interface Repository {
 
 export function Portfolio() {
   const { toast } = useToast();
+  // ADD REACT ROUTER HOOKS
+  const { repoId, projectId } = useParams();
+  const navigate = useNavigate();
+  
   const [repositories, setRepositories] = useState<Repository[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeCategory, setActiveCategory] = useState("All");
@@ -58,8 +63,7 @@ export function Portfolio() {
   const [currentPasswordInput, setCurrentPasswordInput] = useState("");
   const [newPasswordInput, setNewPasswordInput] = useState("");
 
-  // FIXED: Proper view state management
-  const [currentView, setCurrentView] = useState<"repositories" | "projects" | "project-detail">("repositories");
+  // REMOVED: currentView state - we'll use URL params instead
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
 
@@ -71,6 +75,15 @@ export function Portfolio() {
   // Manual Image URL State
   const [manualRepoImage, setManualRepoImage] = useState("");
   const [projectImageUrls, setProjectImageUrls] = useState<string[]>([""]);
+
+  // ADDED: Determine current view based on URL params
+  const getCurrentView = () => {
+    if (projectId) return "project-detail";
+    if (repoId) return "projects";
+    return "repositories";
+  };
+
+  const currentView = getCurrentView();
 
   const handleLogin = () => {
     const storedPassword = localStorage.getItem("adminPassword") || "usman2006";
@@ -139,6 +152,25 @@ export function Portfolio() {
     );
     return () => unsubscribe();
   }, []);
+
+  // --- Sync selected repo and project with URL params ---
+  useEffect(() => {
+    if (repoId && repositories.length > 0) {
+      const repo = repositories.find(r => r.id === repoId);
+      setSelectedRepo(repo || null);
+    } else {
+      setSelectedRepo(null);
+    }
+  }, [repoId, repositories]);
+
+  useEffect(() => {
+    if (projectId && projects.length > 0) {
+      const project = projects.find(p => p.id === projectId);
+      setSelectedProject(project || null);
+    } else {
+      setSelectedProject(null);
+    }
+  }, [projectId, projects]);
 
   // --- Firebase: Listen to Projects (when a repo is selected) ---
   useEffect(() => {
@@ -259,26 +291,21 @@ export function Portfolio() {
     setProjectImageUrls(newUrls);
   };
 
-  // FIXED: Navigation handlers that properly switch between views
+  // --- FIXED: Navigation handlers with React Router ---
   const handleRepositoryClick = (repo: Repository) => {
-    setSelectedRepo(repo);
-    setCurrentView("projects");
+    navigate(`/portfolio/${repo.id}`);
   };
 
   const handleProjectClick = (project: Project) => {
-    setSelectedProject(project);
-    setCurrentView("project-detail");
+    navigate(`/portfolio/${selectedRepo?.id}/projects/${project.id}`);
   };
 
   const handleBackToRepositories = () => {
-    setCurrentView("repositories");
-    setSelectedRepo(null);
-    setSelectedProject(null);
+    navigate('/portfolio');
   };
 
   const handleBackToProjects = () => {
-    setCurrentView("projects");
-    setSelectedProject(null);
+    navigate(`/portfolio/${selectedRepo?.id}`);
   };
 
   // Reset new project form
