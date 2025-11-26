@@ -58,8 +58,8 @@ export function Portfolio() {
   const [currentPasswordInput, setCurrentPasswordInput] = useState("");
   const [newPasswordInput, setNewPasswordInput] = useState("");
 
-  // Navigation State - SIMPLIFIED
-  const [currentView, setCurrentView] = useState<"repositories" | "projects">("repositories");
+  // Navigation State
+  const [currentView, setCurrentView] = useState<"repositories" | "projects" | "project-detail">("repositories");
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
 
@@ -68,9 +68,9 @@ export function Portfolio() {
   const [newRepoOpen, setNewRepoOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   
-  // Manual Image URL State - ONLY URLS NOW
+  // Manual Image URL State
   const [manualRepoImage, setManualRepoImage] = useState("");
-  const [projectImageUrls, setProjectImageUrls] = useState<string[]>([""]); // Start with one empty URL
+  const [projectImageUrls, setProjectImageUrls] = useState<string[]>([""]);
 
   const handleLogin = () => {
     const storedPassword = localStorage.getItem("adminPassword") || "usman2006";
@@ -263,6 +263,10 @@ export function Portfolio() {
   const handleBackToRepositories = () => {
     setCurrentView("repositories");
     setSelectedRepo(null);
+  };
+
+  const handleBackToProjects = () => {
+    setCurrentView("projects");
     setSelectedProject(null);
   };
 
@@ -273,6 +277,13 @@ export function Portfolio() {
 
   const handleProjectClick = (project: Project) => {
     setSelectedProject(project);
+    setCurrentView("project-detail");
+  };
+
+  // --- Reset new project form ---
+  const resetNewProjectForm = () => {
+    setNewProject({ title: "", description: "" });
+    setProjectImageUrls([""]);
   };
 
   // --- Rendering Helpers ---
@@ -281,7 +292,7 @@ export function Portfolio() {
     : repositories.filter(r => r.category === activeCategory);
 
   return (
-    <Section id="portfolio" className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 rounded-3xl my-20 border border-white/10 shadow-2xl">
+    <Section id="portfolio" className="bg-gradient-to-b from-white/3 via-white/2 to-transparent rounded-3xl my-20">
       {/* Header & Controls */}
       <div className="flex justify-between items-end mb-8">
         <div>
@@ -289,10 +300,20 @@ export function Portfolio() {
             <Button 
               variant="ghost" 
               onClick={handleBackToRepositories}
-              className="pl-0 hover:bg-transparent hover:text-white mb-2 text-white/70 hover:text-white transition-all duration-300 group"
+              className="pl-0 hover:bg-transparent hover:text-primary mb-2 group"
             >
               <ArrowLeft className="mr-2 h-4 w-4 group-hover:-translate-x-1 transition-transform" /> 
               Back to Collections
+            </Button>
+          )}
+          {currentView === "project-detail" && (
+            <Button 
+              variant="ghost" 
+              onClick={handleBackToProjects}
+              className="pl-0 hover:bg-transparent hover:text-primary mb-2 group"
+            >
+              <ArrowLeft className="mr-2 h-4 w-4 group-hover:-translate-x-1 transition-transform" /> 
+              Back to {selectedRepo?.title}
             </Button>
           )}
         </div>
@@ -301,7 +322,7 @@ export function Portfolio() {
                 <Button 
                     variant="ghost" 
                     size="sm" 
-                    className="text-xs text-white/60 hover:text-white gap-2 transition-colors"
+                    className="text-xs text-muted-foreground gap-2"
                     onClick={() => setChangePasswordOpen(true)}
                 >
                     Change Password
@@ -310,12 +331,7 @@ export function Portfolio() {
             <Button 
             variant="ghost" 
             size="sm" 
-            className={cn(
-              "text-xs gap-2 transition-all duration-300",
-              isEditMode 
-                ? "text-white bg-white/20 hover:bg-white/30" 
-                : "text-white/60 hover:text-white hover:bg-white/10"
-            )}
+            className={cn("text-xs text-muted-foreground gap-2", isEditMode && "text-primary bg-primary/10")}
             onClick={() => {
                 if (isEditMode) {
                     setIsEditMode(false);
@@ -325,61 +341,54 @@ export function Portfolio() {
                 }
             }}
             >
-            <Settings className="w-3 h-3" /> {isEditMode ? "Exit Admin" : "Admin"}
+            <Settings className="w-3 h-3" /> {isEditMode ? "Exit Admin" : "Admin Login"}
             </Button>
         </div>
 
         {/* Change Password Dialog */}
         <Dialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen}>
-            <DialogContent className="sm:max-w-[425px] bg-slate-800 border-white/10">
-                <DialogTitle className="text-white">Change Admin Password</DialogTitle>
+            <DialogContent className="sm:max-w-[425px]">
+                <DialogTitle>Change Admin Password</DialogTitle>
                 <div className="grid gap-4 py-4">
                     <div className="grid gap-2">
-                        <Label className="text-white/80">Current Password</Label>
+                        <Label>Current Password</Label>
                         <Input 
                             type="password" 
                             value={currentPasswordInput}
                             onChange={(e) => setCurrentPasswordInput(e.target.value)}
-                            className="bg-slate-700 border-white/10 text-white"
                         />
                     </div>
                     <div className="grid gap-2">
-                        <Label className="text-white/80">New Password</Label>
+                        <Label>New Password</Label>
                         <Input 
                             type="password" 
                             value={newPasswordInput}
                             onChange={(e) => setNewPasswordInput(e.target.value)}
-                            className="bg-slate-700 border-white/10 text-white"
                         />
                     </div>
                 </div>
                 <div className="flex justify-end">
-                    <Button onClick={handleChangePassword} className="bg-white text-slate-900 hover:bg-white/90">
-                        Update Password
-                    </Button>
+                    <Button onClick={handleChangePassword}>Update Password</Button>
                 </div>
             </DialogContent>
         </Dialog>
 
         <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
-            <DialogContent className="sm:max-w-[425px] bg-slate-800 border-white/10">
-                <DialogTitle className="text-white">Admin Login</DialogTitle>
+            <DialogContent className="sm:max-w-[425px]">
+                <DialogTitle>Admin Login</DialogTitle>
                 <div className="grid gap-4 py-4">
                     <div className="grid gap-2">
-                        <Label className="text-white/80">Password</Label>
+                        <Label>Password</Label>
                         <Input 
                             type="password" 
                             value={adminPassword}
                             onChange={(e) => setAdminPassword(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
-                            className="bg-slate-700 border-white/10 text-white"
                         />
                     </div>
                 </div>
                 <div className="flex justify-end">
-                    <Button onClick={handleLogin} className="bg-white text-slate-900 hover:bg-white/90">
-                        Login
-                    </Button>
+                    <Button onClick={handleLogin}>Login</Button>
                 </div>
             </DialogContent>
         </Dialog>
@@ -403,7 +412,7 @@ export function Portfolio() {
       {/* PROTOTYPE WARNING */}
       {isEditMode && !firebaseError && (
         <FadeIn>
-          <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-200 p-4 rounded-lg mb-8 text-sm text-center flex flex-col items-center gap-2">
+          <div className="bg-primary/10 border border-primary/20 text-primary p-4 rounded-lg mb-8 text-sm text-center flex flex-col items-center gap-2">
             <div className="flex items-center gap-2 font-bold">
               <Folder className="w-4 h-4" />
               <span>Admin Mode Active</span>
@@ -415,39 +424,31 @@ export function Portfolio() {
         </FadeIn>
       )}
 
-      <FadeIn>
-        <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-5xl font-display font-bold mb-4 bg-gradient-to-r from-white to-white/80 bg-clip-text text-transparent">
-            {currentView === "repositories" ? "Portfolio Collections" : selectedRepo?.title}
-          </h2>
-          <p className="text-white/60 text-lg">
-            {currentView === "repositories" 
-              ? "Curated selection of creative works and projects" 
-              : selectedRepo?.description}
-          </p>
-        </div>
-      </FadeIn>
-
-      {loading && (
-        <div className="flex justify-center py-20">
-          <Loader2 className="w-8 h-8 animate-spin text-white" />
-        </div>
-      )}
-
       {/* VIEW 1: REPOSITORIES */}
       {!loading && currentView === "repositories" && (
         <>
+          <FadeIn>
+            <div className="text-center mb-12">
+              <h2 className="text-3xl md:text-5xl font-display font-bold mb-4">
+                Selected Work
+              </h2>
+              <p className="text-muted-foreground">
+                A showcase of my recent projects and designs.
+              </p>
+            </div>
+          </FadeIn>
+
           <FadeIn delay={0.2}>
-            <div className="flex flex-wrap justify-center gap-3 mb-12">
+            <div className="flex flex-wrap justify-center gap-2 mb-12">
               {CATEGORIES.map((category) => (
                 <button
                   key={category}
                   onClick={() => setActiveCategory(category)}
                   className={cn(
-                    "px-6 py-3 rounded-full text-sm font-medium transition-all duration-300 border backdrop-blur-sm",
+                    "px-4 py-2 rounded-full text-sm font-medium transition-all duration-300",
                     activeCategory === category 
-                      ? "bg-white text-slate-900 border-white shadow-lg scale-105" 
-                      : "bg-white/10 text-white/80 border-white/20 hover:bg-white/20 hover:text-white hover:scale-105"
+                      ? "bg-primary text-primary-foreground" 
+                      : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
                   )}
                 >
                   {category}
@@ -456,39 +457,32 @@ export function Portfolio() {
             </div>
           </FadeIn>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
             {/* Add New Repository Card */}
             {isEditMode && (
               <Dialog open={newRepoOpen} onOpenChange={setNewRepoOpen}>
                 <DialogTrigger asChild>
-                  <div className="group cursor-pointer border-2 border-dashed border-white/30 hover:border-white/60 rounded-2xl aspect-[4/3] flex flex-col items-center justify-center text-white/60 hover:text-white transition-all duration-500 bg-white/5 hover:bg-white/10 backdrop-blur-sm">
-                    <div className="relative">
-                      <Folder className="w-16 h-16 mb-4 group-hover:scale-110 transition-transform duration-300" />
-                      <Plus className="absolute -top-1 -right-1 w-6 h-6 bg-white text-slate-900 rounded-full p-1" />
-                    </div>
-                    <span className="font-medium text-lg">Create New Collection</span>
-                    <p className="text-sm mt-2 text-white/40">Add a new project collection</p>
+                  <div className="group cursor-pointer border-2 border-dashed border-primary/30 hover:border-primary rounded-xl aspect-[4/3] flex flex-col items-center justify-center text-primary transition-colors bg-primary/5 hover:bg-primary/10">
+                    <Folder className="w-12 h-12 mb-2" />
+                    <span className="font-medium">Add New Repository</span>
                   </div>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-[500px] bg-slate-800 border-white/10 max-h-[90vh] overflow-y-auto">
-                  <DialogTitle className="text-white text-2xl">Create New Collection</DialogTitle>
-                  <DialogDescription className="text-white/60">
-                    Collections are folders that organize your projects and work.
-                  </DialogDescription>
-                  <div className="grid gap-6 py-6">
-                    <div className="grid gap-3">
-                      <Label className="text-white/80 text-sm font-medium">Collection Title *</Label>
+                <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+                  <DialogTitle>Create New Repository</DialogTitle>
+                  <DialogDescription>Repositories are folders that contain multiple projects.</DialogDescription>
+                  <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                      <Label>Repository Title *</Label>
                       <Input 
                         value={newRepo.title} 
                         onChange={(e) => setNewRepo({...newRepo, title: e.target.value})}
-                        placeholder="e.g. Brand Identity 2024" 
-                        className="bg-slate-700 border-white/10 text-white placeholder-white/40"
+                        placeholder="e.g. Branding 2025" 
                       />
                     </div>
-                    <div className="grid gap-3">
-                      <Label className="text-white/80 text-sm font-medium">Category</Label>
+                    <div className="grid gap-2">
+                      <Label>Category</Label>
                       <select 
-                        className="flex h-12 w-full rounded-lg border border-white/10 bg-slate-700 px-4 py-2 text-white text-sm ring-offset-background"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
                         value={newRepo.category}
                         onChange={(e) => setNewRepo({...newRepo, category: e.target.value})}
                       >
@@ -497,11 +491,11 @@ export function Portfolio() {
                         ))}
                       </select>
                     </div>
-                    <div className="grid gap-3">
-                      <Label className="text-white/80 text-sm font-medium">Cover Image URL *</Label>
-                      <div className="flex flex-col gap-3">
-                          <div className="flex gap-3 items-center">
-                              <LinkIcon className="w-5 h-5 text-white/60 shrink-0" />
+                    <div className="grid gap-2">
+                      <Label>Cover Image URL *</Label>
+                      <div className="flex flex-col gap-2">
+                          <div className="flex gap-2 items-center">
+                              <LinkIcon className="w-4 h-4 text-muted-foreground shrink-0" />
                               <Input 
                                   placeholder="https://example.com/cover-image.jpg" 
                                   value={manualRepoImage}
@@ -509,19 +503,18 @@ export function Portfolio() {
                                       setManualRepoImage(e.target.value);
                                       setNewRepo({...newRepo, coverImage: e.target.value}); 
                                   }}
-                                  className="bg-slate-700 border-white/10 text-white placeholder-white/40"
                               />
                           </div>
-                          <p className="text-xs text-white/40">
+                          <p className="text-xs text-muted-foreground">
                               Must be a direct image link ending in .jpg, .png, or .webp
                           </p>
                       </div>
 
                       {/* PREVIEW */}
                       {manualRepoImage && (
-                        <div className="mt-3">
-                            <Label className="text-white/80 text-sm font-medium mb-2 block">Cover Preview</Label>
-                            <div className="relative h-32 w-full rounded-lg overflow-hidden border border-white/10">
+                        <div className="mt-2">
+                            <Label className="text-xs text-muted-foreground mb-1 block">Preview</Label>
+                            <div className="relative h-24 w-24 rounded-md overflow-hidden border border-border">
                                 <img 
                                     src={manualRepoImage} 
                                     className="h-full w-full object-cover"
@@ -534,31 +527,28 @@ export function Portfolio() {
                         </div>
                       )}
                     </div>
-                    <div className="grid gap-3">
-                      <Label className="text-white/80 text-sm font-medium">Description</Label>
+                    <div className="grid gap-2">
+                      <Label>Description</Label>
                       <Textarea 
                         value={newRepo.description}
                         onChange={(e) => setNewRepo({...newRepo, description: e.target.value})}
-                        placeholder="Describe this collection..."
+                        placeholder="Describe this repository..."
                         rows={3}
-                        className="bg-slate-700 border-white/10 text-white placeholder-white/40 resize-none"
                       />
                     </div>
                   </div>
-                  <div className="flex justify-end gap-3">
+                  <div className="flex justify-end gap-2">
                     <Button 
                       variant="outline" 
                       onClick={() => setNewRepoOpen(false)}
-                      className="border-white/20 text-white/80 hover:bg-white/10"
                     >
                       Cancel
                     </Button>
                     <Button 
                       onClick={handleAddRepository} 
                       disabled={!newRepo.title || !manualRepoImage}
-                      className="bg-white text-slate-900 hover:bg-white/90"
                     >
-                      Create Collection
+                      Create Repository
                     </Button>
                   </div>
                 </DialogContent>
@@ -571,7 +561,7 @@ export function Portfolio() {
                   <Button
                     variant="destructive"
                     size="icon"
-                    className="absolute top-4 right-4 z-50 h-9 w-9 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg bg-red-500/90 hover:bg-red-500"
+                    className="absolute top-2 right-2 z-50 h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleDeleteRepository(repo.id);
@@ -583,32 +573,19 @@ export function Portfolio() {
                 
                 <div 
                   onClick={() => handleRepositoryClick(repo)}
-                  className="cursor-pointer relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/5 to-white/10 backdrop-blur-sm border border-white/10 hover:border-white/30 transition-all duration-500 group-hover:scale-[1.02]"
+                  className="cursor-pointer relative overflow-hidden rounded-xl bg-muted aspect-[4/3] transition-all duration-500 group-hover:scale-[1.02]"
                 >
-                  <div className="aspect-[4/3] relative overflow-hidden">
-                    <img 
-                      src={repo.coverImage} 
-                      alt={repo.title} 
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                    
-                    {/* Hover Overlay Content */}
-                    <div className="absolute inset-0 flex flex-col justify-end p-6 text-white transform translate-y-4 group-hover:translate-y-0 transition-transform duration-500">
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-display font-bold text-xl leading-tight">{repo.title}</h3>
-                        <ExternalLink className="w-5 h-5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                      </div>
-                      <p className="text-white/60 text-sm line-clamp-2">{repo.description}</p>
-                      <div className="flex justify-between items-center mt-3">
-                        <span className="inline-flex items-center px-3 py-1 rounded-full bg-white/20 text-white/80 text-xs font-medium backdrop-blur-sm">
-                          {repo.category}
-                        </span>
-                        <span className="text-white/40 text-sm">
-                          View Projects →
-                        </span>
-                      </div>
-                    </div>
+                  <img 
+                    src={repo.coverImage} 
+                    alt={repo.title} 
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                  />
+                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center text-center p-4">
+                    <Folder className="text-white w-8 h-8 mb-2" />
+                    <h3 className="text-white font-display font-bold text-xl mb-1 translate-y-4 group-hover:translate-y-0 transition-transform duration-300">{repo.title}</h3>
+                    <p className="text-white/80 text-sm translate-y-4 group-hover:translate-y-0 transition-transform duration-500 delay-100 line-clamp-2">
+                      {repo.description}
+                    </p>
                   </div>
                 </div>
               </FadeIn>
@@ -620,59 +597,58 @@ export function Portfolio() {
       {/* VIEW 2: PROJECTS INSIDE REPOSITORY */}
       {!loading && currentView === "projects" && selectedRepo && (
         <div className="space-y-8">
-          {/* Repository Header */}
+          {/* Repository Header - Fixed to show only once */}
           <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 mb-4">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-4">
               <Folder className="w-4 h-4" />
-              <span className="text-sm text-white/60">{selectedRepo.category}</span>
+              {selectedRepo.category}
             </div>
-            <h2 className="text-4xl md:text-6xl font-display font-bold mb-4 bg-gradient-to-r from-white to-white/80 bg-clip-text text-transparent">
+            <h2 className="text-3xl md:text-5xl font-display font-bold mb-4">
               {selectedRepo.title}
             </h2>
-            <p className="text-white/60 text-lg max-w-2xl mx-auto leading-relaxed">
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
               {selectedRepo.description}
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
             {/* Add New Project Card */}
             {isEditMode && (
-              <Dialog open={newProjectOpen} onOpenChange={setNewProjectOpen}>
+              <Dialog open={newProjectOpen} onOpenChange={(open) => {
+                setNewProjectOpen(open);
+                if (!open) {
+                  resetNewProjectForm();
+                }
+              }}>
                 <DialogTrigger asChild>
-                  <div className="group cursor-pointer border-2 border-dashed border-white/30 hover:border-white/60 rounded-2xl aspect-[4/3] flex flex-col items-center justify-center text-white/60 hover:text-white transition-all duration-500 bg-white/5 hover:bg-white/10 backdrop-blur-sm">
-                    <div className="relative">
-                      <ImageIcon className="w-16 h-16 mb-4 group-hover:scale-110 transition-transform duration-300" />
-                      <Plus className="absolute -top-1 -right-1 w-6 h-6 bg-white text-slate-900 rounded-full p-1" />
-                    </div>
-                    <span className="font-medium text-lg">Add New Project</span>
-                    <p className="text-sm mt-2 text-white/40">Add to {selectedRepo.title}</p>
+                  <div className="group cursor-pointer border-2 border-dashed border-primary/30 hover:border-primary rounded-xl aspect-[4/3] flex flex-col items-center justify-center text-primary transition-colors bg-primary/5 hover:bg-primary/10">
+                    <ImageIcon className="w-12 h-12 mb-2" />
+                    <span className="font-medium">Add New Project</span>
                   </div>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-[600px] bg-slate-800 border-white/10 max-h-[90vh] overflow-y-auto">
-                  <DialogTitle className="text-white text-2xl">Add Project to {selectedRepo.title}</DialogTitle>
-                  <div className="grid gap-6 py-6">
-                    <div className="grid gap-3">
-                      <Label className="text-white/80 text-sm font-medium">Project Name *</Label>
+                <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+                  <DialogTitle>Add Project to {selectedRepo.title}</DialogTitle>
+                  <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                      <Label>Project Name *</Label>
                       <Input 
                         value={newProject.title} 
                         onChange={(e) => setNewProject({...newProject, title: e.target.value})}
                         placeholder="Enter project name"
-                        className="bg-slate-700 border-white/10 text-white placeholder-white/40"
                       />
                     </div>
-                    <div className="grid gap-3">
-                      <Label className="text-white/80 text-sm font-medium">Description</Label>
+                    <div className="grid gap-2">
+                      <Label>Description</Label>
                       <Textarea 
                         value={newProject.description}
                         onChange={(e) => setNewProject({...newProject, description: e.target.value})}
                         placeholder="Describe your project..."
                         rows={4}
-                        className="bg-slate-700 border-white/10 text-white placeholder-white/40 resize-none"
                       />
                     </div>
-                    <div className="grid gap-3">
+                    <div className="grid gap-2">
                       <div className="flex items-center justify-between">
-                        <Label className="text-white/80 text-sm font-medium">
+                        <Label>
                           Project Images ({projectImageUrls.filter(url => url.trim() !== "").length}/7) *
                         </Label>
                         <Button
@@ -681,14 +657,14 @@ export function Portfolio() {
                           size="sm"
                           onClick={addImageUrlField}
                           disabled={projectImageUrls.length >= 7}
-                          className="border-white/20 text-white/80 hover:bg-white/10 h-8 text-xs"
+                          className="h-8 text-xs"
                         >
                           <Plus className="w-3 h-3 mr-1" />
                           Add URL
                         </Button>
                       </div>
                       
-                      <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                      <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
                         {projectImageUrls.map((url, index) => (
                           <div key={index} className="flex gap-2 items-start">
                             <div className="flex-1">
@@ -696,7 +672,7 @@ export function Portfolio() {
                                 placeholder={`Image URL #${index + 1}`}
                                 value={url}
                                 onChange={(e) => updateImageUrl(index, e.target.value)}
-                                className="bg-slate-700 border-white/10 text-white placeholder-white/40 text-sm"
+                                className="text-sm"
                               />
                             </div>
                             {projectImageUrls.length > 1 && (
@@ -705,7 +681,7 @@ export function Portfolio() {
                                 variant="outline"
                                 size="icon"
                                 onClick={() => removeImageUrlField(index)}
-                                className="shrink-0 border-white/20 text-white/80 hover:bg-red-500/20 hover:text-red-200 hover:border-red-500/30 h-10 w-10"
+                                className="shrink-0 h-10 w-10"
                               >
                                 <Minus className="w-4 h-4" />
                               </Button>
@@ -714,17 +690,17 @@ export function Portfolio() {
                         ))}
                       </div>
                       
-                      <p className="text-xs text-white/40">
+                      <p className="text-xs text-muted-foreground">
                         Add up to 7 image URLs. Each URL must be a direct link to an image file.
                       </p>
 
                       {/* Image Previews */}
                       {projectImageUrls.some(url => url.trim() !== "") && (
                         <div className="mt-4">
-                          <Label className="text-white/80 text-sm font-medium mb-3 block">Image Previews</Label>
+                          <Label className="text-sm font-medium mb-2 block">Image Previews</Label>
                           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                             {projectImageUrls.filter(url => url.trim() !== "").map((url, index) => (
-                              <div key={index} className="relative aspect-square rounded-lg overflow-hidden border border-white/10 bg-slate-700">
+                              <div key={index} className="relative aspect-square rounded-lg overflow-hidden border border-border bg-muted">
                                 <img
                                   src={url}
                                   alt={`Preview ${index + 1}`}
@@ -733,7 +709,7 @@ export function Portfolio() {
                                     e.currentTarget.style.display = 'none';
                                   }}
                                 />
-                                <div className="absolute inset-0 flex items-center justify-center bg-slate-800/80 text-white/40 text-xs text-center p-2 hidden">
+                                <div className="absolute inset-0 flex items-center justify-center bg-destructive/10 text-destructive text-xs text-center p-2 hidden">
                                   Invalid URL
                                 </div>
                               </div>
@@ -743,21 +719,19 @@ export function Portfolio() {
                       )}
                     </div>
                   </div>
-                  <div className="flex justify-end gap-3">
+                  <div className="flex justify-end gap-2">
                     <Button 
                       variant="outline" 
                       onClick={() => {
                         setNewProjectOpen(false);
-                        setProjectImageUrls([""]);
+                        resetNewProjectForm();
                       }}
-                      className="border-white/20 text-white/80 hover:bg-white/10"
                     >
                       Cancel
                     </Button>
                     <Button 
                       onClick={handleAddProject} 
                       disabled={!newProject.title || projectImageUrls.filter(url => url.trim() !== "").length === 0}
-                      className="bg-white text-slate-900 hover:bg-white/90"
                     >
                       Add Project
                     </Button>
@@ -772,7 +746,7 @@ export function Portfolio() {
                   <Button
                     variant="destructive"
                     size="icon"
-                    className="absolute top-4 right-4 z-50 h-9 w-9 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg bg-red-500/90 hover:bg-red-500"
+                    className="absolute top-2 right-2 z-50 h-8 w-8 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleDeleteProject(project.id);
@@ -784,32 +758,18 @@ export function Portfolio() {
                 
                 <div 
                   onClick={() => handleProjectClick(project)}
-                  className="cursor-pointer relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/5 to-white/10 backdrop-blur-sm border border-white/10 hover:border-white/30 transition-all duration-500 group-hover:scale-[1.02]"
+                  className="cursor-pointer relative overflow-hidden rounded-xl bg-muted aspect-[4/3] transition-all duration-500 group-hover:scale-[1.02]"
                 >
-                  <div className="aspect-[4/3] relative overflow-hidden">
-                    <img 
-                      src={project.images[0]} 
-                      alt={project.title} 
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-                    
-                    {/* Hover Overlay Content */}
-                    <div className="absolute inset-0 flex flex-col justify-end p-6 text-white transform translate-y-4 group-hover:translate-y-0 transition-transform duration-500">
-                      <div className="flex items-center justify-between mb-2">
-                        <h3 className="font-display font-bold text-xl leading-tight">{project.title}</h3>
-                        <ExternalLink className="w-5 h-5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                      </div>
-                      <p className="text-white/60 text-sm line-clamp-2">{project.description}</p>
-                      <div className="flex justify-between items-center mt-3">
-                        <span className="text-white/40 text-xs">
-                          {project.images.length} image{project.images.length !== 1 ? 's' : ''}
-                        </span>
-                        <span className="text-white/40 text-sm">
-                          View Details →
-                        </span>
-                      </div>
-                    </div>
+                  <img 
+                    src={project.images[0]} 
+                    alt={project.title} 
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                  />
+                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center text-center p-4">
+                    <h3 className="text-white font-display font-bold text-xl mb-2 translate-y-4 group-hover:translate-y-0 transition-transform duration-300">{project.title}</h3>
+                    <p className="text-white/80 text-sm translate-y-4 group-hover:translate-y-0 transition-transform duration-500 delay-100 line-clamp-2">
+                      {project.description}
+                    </p>
                   </div>
                 </div>
               </FadeIn>
@@ -818,97 +778,86 @@ export function Portfolio() {
         </div>
       )}
 
-      {/* PROJECT DETAIL PAGE - Full Screen Overlay */}
-      {selectedProject && (
-        <div className="fixed inset-0 z-50 bg-slate-900 overflow-y-auto">
-          <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
-            {/* Header */}
-            <div className="sticky top-0 z-10 bg-slate-900/80 backdrop-blur-lg border-b border-white/10">
-              <div className="container mx-auto px-6 py-4">
-                <div className="flex items-center justify-between">
-                  <Button 
-                    variant="ghost" 
-                    onClick={() => setSelectedProject(null)}
-                    className="text-white/70 hover:text-white hover:bg-white/10 pl-0 group"
-                  >
-                    <ArrowLeft className="mr-2 h-5 w-5 group-hover:-translate-x-1 transition-transform" />
-                    Back to {selectedRepo?.title}
-                  </Button>
-                  
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setSelectedProject(null)}
-                    className="text-white/70 hover:text-white hover:bg-white/10"
-                  >
-                    <X className="h-5 w-5" />
-                  </Button>
-                </div>
-              </div>
-            </div>
+      {/* VIEW 3: PROJECT DETAIL PAGE */}
+      {!loading && currentView === "project-detail" && selectedProject && selectedRepo && (
+        <div className="space-y-8">
+          {/* Project Header */}
+          <div className="text-center mb-12">
+            <Button 
+              variant="ghost" 
+              onClick={handleBackToProjects}
+              className="pl-0 hover:bg-transparent hover:text-primary mb-4 group"
+            >
+              <ArrowLeft className="mr-2 h-4 w-4 group-hover:-translate-x-1 transition-transform" /> 
+              Back to {selectedRepo.title}
+            </Button>
+            
+            <h2 className="text-3xl md:text-5xl font-display font-bold mb-4">
+              {selectedProject.title}
+            </h2>
+            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
+              {selectedProject.description}
+            </p>
+          </div>
 
-            {/* Project Content */}
-            <div className="container mx-auto px-6 py-12">
-              <div className="max-w-6xl mx-auto">
-                {/* Project Header */}
-                <div className="text-center mb-16">
-                  <h1 className="text-5xl md:text-7xl font-display font-bold mb-6 bg-gradient-to-r from-white to-white/80 bg-clip-text text-transparent">
-                    {selectedProject.title}
-                  </h1>
-                  <p className="text-xl text-white/60 leading-relaxed max-w-3xl mx-auto">
-                    {selectedProject.description}
-                  </p>
+          {/* Project Images - Professional Layout */}
+          <div className={`grid gap-8 ${
+            selectedProject.images.length === 1 
+              ? "grid-cols-1 max-w-4xl mx-auto" 
+              : "grid-cols-1 md:grid-cols-2"
+          }`}>
+            {selectedProject.images.map((image, index) => (
+              <FadeIn key={index} delay={index * 0.1}>
+                <div className={cn(
+                  "relative overflow-hidden rounded-2xl bg-muted border border-border",
+                  selectedProject.images.length === 1 
+                    ? "aspect-video max-w-6xl mx-auto" 
+                    : "aspect-[4/3]"
+                )}>
+                  <img
+                    src={image}
+                    alt={`${selectedProject.title} - Image ${index + 1}`}
+                    className="w-full h-full object-cover transition-transform duration-700 hover:scale-105"
+                  />
                 </div>
+              </FadeIn>
+            ))}
+          </div>
 
-                {/* Project Images */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
-                  {selectedProject.images.map((image, index) => (
-                    <div 
-                      key={index} 
-                      className="relative group rounded-2xl overflow-hidden border border-white/10 bg-white/5 backdrop-blur-sm hover:border-white/20 transition-all duration-500"
-                    >
-                      <img
-                        src={image}
-                        alt={`${selectedProject.title} - Image ${index + 1}`}
-                        className="w-full h-auto object-cover transition-transform duration-700 group-hover:scale-105"
-                      />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300" />
-                    </div>
-                  ))}
-                </div>
-
-                {/* Project Info & CTA */}
-                <div className="text-center border-t border-white/10 pt-16">
-                  <div className="max-w-2xl mx-auto">
-                    <h3 className="text-2xl font-display font-bold text-white mb-4">
-                      Interested in this project?
-                    </h3>
-                    <p className="text-white/60 mb-8 text-lg">
-                      Let's discuss how we can bring your vision to life.
-                    </p>
-                    <Button 
-                      size="lg" 
-                      onClick={() => {
-                        setSelectedProject(null);
-                        const contactSection = document.getElementById("contact");
-                        if (contactSection) {
-                          contactSection.scrollIntoView({ behavior: "smooth" });
-                          setTimeout(() => {
-                            window.dispatchEvent(new CustomEvent("prefillContact", { 
-                              detail: { subject: `Inquiry about: ${selectedProject.title}` } 
-                            }));
-                          }, 500);
-                        }
-                      }}
-                      className="bg-white text-slate-900 hover:bg-white/90 text-lg px-8 py-6 rounded-full font-semibold transition-all duration-300 hover:scale-105"
-                    >
-                      Start a Conversation
-                    </Button>
-                  </div>
-                </div>
-              </div>
+          {/* Project Info & CTA */}
+          <div className="text-center border-t border-border pt-12 mt-12">
+            <div className="max-w-2xl mx-auto">
+              <h3 className="text-2xl font-display font-bold mb-4">
+                Interested in this project?
+              </h3>
+              <p className="text-muted-foreground mb-8">
+                Let's discuss how we can bring your vision to life.
+              </p>
+              <Button 
+                size="lg" 
+                onClick={() => {
+                  const contactSection = document.getElementById("contact");
+                  if (contactSection) {
+                    contactSection.scrollIntoView({ behavior: "smooth" });
+                    setTimeout(() => {
+                      window.dispatchEvent(new CustomEvent("prefillContact", { 
+                        detail: { subject: `Inquiry about: ${selectedProject.title}` } 
+                      }));
+                    }, 500);
+                  }
+                }}
+                className="px-8 py-6 text-lg font-semibold"
+              >
+                Start a Conversation
+              </Button>
             </div>
           </div>
+        </div>
+      )}
+
+      {loading && (
+        <div className="flex justify-center py-20">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
         </div>
       )}
     </Section>
