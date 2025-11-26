@@ -7,9 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Trash2, Settings, Folder, Image as ImageIcon, ArrowLeft, X, AlertTriangle, Loader2, Link as LinkIcon } from "lucide-react";
+import { Trash2, Settings, Folder, Image as ImageIcon, ArrowLeft, X, AlertTriangle, Loader2, Link as LinkIcon, ExternalLink, Plus, Minus } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import imageCompression from 'browser-image-compression';
 
 // Firebase Imports
 import { db, storage } from "@/lib/firebase";
@@ -23,7 +22,6 @@ import {
   orderBy,
   serverTimestamp 
 } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 // Types
 export interface Project {
@@ -31,6 +29,7 @@ export interface Project {
   title: string;
   description: string;
   images: string[];
+  createdAt: any;
 }
 
 export interface Repository {
@@ -39,6 +38,7 @@ export interface Repository {
   description: string;
   category: string;
   coverImage: string;
+  createdAt: any;
 }
 
 export function Portfolio() {
@@ -58,21 +58,19 @@ export function Portfolio() {
   const [currentPasswordInput, setCurrentPasswordInput] = useState("");
   const [newPasswordInput, setNewPasswordInput] = useState("");
 
-  // FIXED: Simplified Navigation State
+  // Navigation State - SIMPLIFIED
   const [currentView, setCurrentView] = useState<"repositories" | "projects">("repositories");
   const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
 
-  // FIXED: Consolidated Form States
+  // Form States
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [newRepoOpen, setNewRepoOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<string>("");
   
-  // Manual Image URL State
+  // Manual Image URL State - ONLY URLS NOW
   const [manualRepoImage, setManualRepoImage] = useState("");
-  const [manualProjectImage, setManualProjectImage] = useState("");
+  const [projectImageUrls, setProjectImageUrls] = useState<string[]>([""]); // Start with one empty URL
 
   const handleLogin = () => {
     const storedPassword = localStorage.getItem("adminPassword") || "usman2006";
@@ -110,9 +108,8 @@ export function Portfolio() {
   const [newProject, setNewProject] = useState<{
     title: string;
     description: string;
-    images: string[];
   }>({
-    title: "", description: "", images: []
+    title: "", description: ""
   });
 
   // --- Firebase: Listen to Repositories ---
@@ -161,52 +158,16 @@ export function Portfolio() {
     return () => unsubscribe();
   }, [selectedRepo?.id]);
 
-  // --- Image Upload Helper with Compression ---
-  const compressImage = async (file: File) => {
-    const options = {
-      maxSizeMB: 0.5,
-      maxWidthOrHeight: 1920,
-      useWebWorker: true,
-      initialQuality: 0.8
-    };
-    try {
-      return await imageCompression(file, options);
-    } catch (error) {
-      console.error("Compression failed:", error);
-      return file;
-    }
-  };
-
-  const uploadImageToStorage = async (file: File, path: string): Promise<string> => {
-    try {
-        setUploadProgress("Compressing...");
-        const compressedFile = await compressImage(file);
-        
-        setUploadProgress("Uploading...");
-        const storageRef = ref(storage, path);
-        const snapshot = await uploadBytes(storageRef, compressedFile);
-        const url = await getDownloadURL(snapshot.ref);
-        return url;
-    } catch (error: any) {
-        console.error("Upload failed:", error);
-        if (error.code === 'storage/unauthorized') {
-            throw new Error("Permission denied. Check Firebase Storage Rules.");
-        }
-        throw error;
-    }
-  };
-
   // --- Repository Management ---
   const handleAddRepository = async () => {
-    const finalCoverImage = manualRepoImage || newRepo.coverImage;
+    const finalCoverImage = manualRepoImage;
 
     if (!newRepo.title || !finalCoverImage) {
-      toast({ title: "Error", description: "Title and Cover Image (Upload or URL) are required.", variant: "destructive" });
+      toast({ title: "Error", description: "Title and Cover Image URL are required.", variant: "destructive" });
       return;
     }
     
     try {
-      setIsUploading(true);
       await addDoc(collection(db, "repositories"), {
         title: newRepo.title,
         description: newRepo.description || "",
@@ -222,9 +183,6 @@ export function Portfolio() {
     } catch (error: any) {
       console.error("Error adding repo: ", error);
       toast({ title: "Error", description: `Failed to create repository: ${error.message}`, variant: "destructive" });
-    } finally {
-      setIsUploading(false);
-      setUploadProgress("");
     }
   };
 
@@ -241,38 +199,31 @@ export function Portfolio() {
 
   // --- Project Management ---
   const handleAddProject = async () => {
-    // Combine uploaded images with manually added URL if present
-    let finalImages = [...newProject.images];
-    if (manualProjectImage) {
-        finalImages.push(manualProjectImage);
-    }
-
-    if (!newProject.title || finalImages.length === 0) {
-      toast({ title: "Error", description: "Title and at least one image (Upload or URL) are required.", variant: "destructive" });
+    // Filter out empty URLs and validate
+    const validImageUrls = projectImageUrls.filter(url => url.trim() !== "");
+    
+    if (!newProject.title || validImageUrls.length === 0) {
+      toast({ title: "Error", description: "Title and at least one image URL are required.", variant: "destructive" });
       return;
     }
     
     if (!selectedRepo?.id) return;
 
     try {
-      setIsUploading(true);
       await addDoc(collection(db, "repositories", selectedRepo.id, "projects"), {
         title: newProject.title,
         description: newProject.description || "",
-        images: finalImages,
+        images: validImageUrls,
         createdAt: serverTimestamp()
       });
 
-      setNewProject({ title: "", description: "", images: [] });
-      setManualProjectImage("");
+      setNewProject({ title: "", description: "" });
+      setProjectImageUrls([""]);
       setNewProjectOpen(false);
       toast({ title: "Success", description: "Project added to repository." });
     } catch (error: any) {
       console.error("Error adding project: ", error);
       toast({ title: "Error", description: `Failed to add project: ${error.message}`, variant: "destructive" });
-    } finally {
-      setIsUploading(false);
-      setUploadProgress("");
     }
   };
 
@@ -288,23 +239,40 @@ export function Portfolio() {
     }
   };
 
-  // FIXED: Navigation handler
+  // --- Image URL Management ---
+  const addImageUrlField = () => {
+    if (projectImageUrls.length < 7) {
+      setProjectImageUrls([...projectImageUrls, ""]);
+    }
+  };
+
+  const removeImageUrlField = (index: number) => {
+    if (projectImageUrls.length > 1) {
+      const newUrls = projectImageUrls.filter((_, i) => i !== index);
+      setProjectImageUrls(newUrls);
+    }
+  };
+
+  const updateImageUrl = (index: number, value: string) => {
+    const newUrls = [...projectImageUrls];
+    newUrls[index] = value;
+    setProjectImageUrls(newUrls);
+  };
+
+  // --- Navigation Handlers ---
   const handleBackToRepositories = () => {
     setCurrentView("repositories");
     setSelectedRepo(null);
     setSelectedProject(null);
   };
 
-  // FIXED: Repository click handler
   const handleRepositoryClick = (repo: Repository) => {
     setSelectedRepo(repo);
     setCurrentView("projects");
   };
 
-  // FIXED: Reset new project form
-  const resetNewProjectForm = () => {
-    setNewProject({ title: "", description: "", images: [] });
-    setManualProjectImage("");
+  const handleProjectClick = (project: Project) => {
+    setSelectedProject(project);
   };
 
   // --- Rendering Helpers ---
@@ -313,7 +281,7 @@ export function Portfolio() {
     : repositories.filter(r => r.category === activeCategory);
 
   return (
-    <Section id="portfolio" className="bg-gradient-to-b from-white/3 via-white/2 to-transparent rounded-3xl my-20">
+    <Section id="portfolio" className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 rounded-3xl my-20 border border-white/10 shadow-2xl">
       {/* Header & Controls */}
       <div className="flex justify-between items-end mb-8">
         <div>
@@ -321,9 +289,10 @@ export function Portfolio() {
             <Button 
               variant="ghost" 
               onClick={handleBackToRepositories}
-              className="pl-0 hover:bg-transparent hover:text-primary mb-2"
+              className="pl-0 hover:bg-transparent hover:text-white mb-2 text-white/70 hover:text-white transition-all duration-300 group"
             >
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back to Repositories
+              <ArrowLeft className="mr-2 h-4 w-4 group-hover:-translate-x-1 transition-transform" /> 
+              Back to Collections
             </Button>
           )}
         </div>
@@ -332,7 +301,7 @@ export function Portfolio() {
                 <Button 
                     variant="ghost" 
                     size="sm" 
-                    className="text-xs text-muted-foreground gap-2"
+                    className="text-xs text-white/60 hover:text-white gap-2 transition-colors"
                     onClick={() => setChangePasswordOpen(true)}
                 >
                     Change Password
@@ -341,7 +310,12 @@ export function Portfolio() {
             <Button 
             variant="ghost" 
             size="sm" 
-            className={cn("text-xs text-muted-foreground gap-2", isEditMode && "text-primary bg-primary/10")}
+            className={cn(
+              "text-xs gap-2 transition-all duration-300",
+              isEditMode 
+                ? "text-white bg-white/20 hover:bg-white/30" 
+                : "text-white/60 hover:text-white hover:bg-white/10"
+            )}
             onClick={() => {
                 if (isEditMode) {
                     setIsEditMode(false);
@@ -351,54 +325,61 @@ export function Portfolio() {
                 }
             }}
             >
-            <Settings className="w-3 h-3" /> {isEditMode ? "Exit Admin" : "Admin Login"}
+            <Settings className="w-3 h-3" /> {isEditMode ? "Exit Admin" : "Admin"}
             </Button>
         </div>
 
         {/* Change Password Dialog */}
         <Dialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen}>
-            <DialogContent className="sm:max-w-[425px]">
-                <DialogTitle>Change Admin Password</DialogTitle>
+            <DialogContent className="sm:max-w-[425px] bg-slate-800 border-white/10">
+                <DialogTitle className="text-white">Change Admin Password</DialogTitle>
                 <div className="grid gap-4 py-4">
                     <div className="grid gap-2">
-                        <Label>Current Password</Label>
+                        <Label className="text-white/80">Current Password</Label>
                         <Input 
                             type="password" 
                             value={currentPasswordInput}
                             onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                            className="bg-slate-700 border-white/10 text-white"
                         />
                     </div>
                     <div className="grid gap-2">
-                        <Label>New Password</Label>
+                        <Label className="text-white/80">New Password</Label>
                         <Input 
                             type="password" 
                             value={newPasswordInput}
                             onChange={(e) => setNewPasswordInput(e.target.value)}
+                            className="bg-slate-700 border-white/10 text-white"
                         />
                     </div>
                 </div>
                 <div className="flex justify-end">
-                    <Button onClick={handleChangePassword}>Update Password</Button>
+                    <Button onClick={handleChangePassword} className="bg-white text-slate-900 hover:bg-white/90">
+                        Update Password
+                    </Button>
                 </div>
             </DialogContent>
         </Dialog>
 
         <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
-            <DialogContent className="sm:max-w-[425px]">
-                <DialogTitle>Admin Login</DialogTitle>
+            <DialogContent className="sm:max-w-[425px] bg-slate-800 border-white/10">
+                <DialogTitle className="text-white">Admin Login</DialogTitle>
                 <div className="grid gap-4 py-4">
                     <div className="grid gap-2">
-                        <Label>Password</Label>
+                        <Label className="text-white/80">Password</Label>
                         <Input 
                             type="password" 
                             value={adminPassword}
                             onChange={(e) => setAdminPassword(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                            className="bg-slate-700 border-white/10 text-white"
                         />
                     </div>
                 </div>
                 <div className="flex justify-end">
-                    <Button onClick={handleLogin}>Login</Button>
+                    <Button onClick={handleLogin} className="bg-white text-slate-900 hover:bg-white/90">
+                        Login
+                    </Button>
                 </div>
             </DialogContent>
         </Dialog>
@@ -422,13 +403,13 @@ export function Portfolio() {
       {/* PROTOTYPE WARNING */}
       {isEditMode && !firebaseError && (
         <FadeIn>
-          <div className="bg-primary/10 border border-primary/20 text-primary p-4 rounded-lg mb-8 text-sm text-center flex flex-col items-center gap-2">
+          <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-200 p-4 rounded-lg mb-8 text-sm text-center flex flex-col items-center gap-2">
             <div className="flex items-center gap-2 font-bold">
               <Folder className="w-4 h-4" />
-              <span>Cloud Sync Active</span>
+              <span>Admin Mode Active</span>
             </div>
             <p className="opacity-80 max-w-lg">
-              You are connected to the database. Changes will update live across all devices.
+              You can now manage repositories and projects.
             </p>
           </div>
         </FadeIn>
@@ -436,12 +417,12 @@ export function Portfolio() {
 
       <FadeIn>
         <div className="text-center mb-12">
-          <h2 className="text-3xl md:text-5xl font-display font-bold mb-4">
-            {currentView === "repositories" ? "Selected Work" : selectedRepo?.title}
+          <h2 className="text-3xl md:text-5xl font-display font-bold mb-4 bg-gradient-to-r from-white to-white/80 bg-clip-text text-transparent">
+            {currentView === "repositories" ? "Portfolio Collections" : selectedRepo?.title}
           </h2>
-          <p className="text-muted-foreground">
+          <p className="text-white/60 text-lg">
             {currentView === "repositories" 
-              ? "A showcase of my recent projects and designs." 
+              ? "Curated selection of creative works and projects" 
               : selectedRepo?.description}
           </p>
         </div>
@@ -449,7 +430,7 @@ export function Portfolio() {
 
       {loading && (
         <div className="flex justify-center py-20">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <Loader2 className="w-8 h-8 animate-spin text-white" />
         </div>
       )}
 
@@ -457,16 +438,16 @@ export function Portfolio() {
       {!loading && currentView === "repositories" && (
         <>
           <FadeIn delay={0.2}>
-            <div className="flex flex-wrap justify-center gap-2 mb-12">
+            <div className="flex flex-wrap justify-center gap-3 mb-12">
               {CATEGORIES.map((category) => (
                 <button
                   key={category}
                   onClick={() => setActiveCategory(category)}
                   className={cn(
-                    "px-4 py-2 rounded-full text-sm font-medium transition-all duration-300",
+                    "px-6 py-3 rounded-full text-sm font-medium transition-all duration-300 border backdrop-blur-sm",
                     activeCategory === category 
-                      ? "bg-primary text-primary-foreground" 
-                      : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
+                      ? "bg-white text-slate-900 border-white shadow-lg scale-105" 
+                      : "bg-white/10 text-white/80 border-white/20 hover:bg-white/20 hover:text-white hover:scale-105"
                   )}
                 >
                   {category}
@@ -475,32 +456,39 @@ export function Portfolio() {
             </div>
           </FadeIn>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {/* Add New Repository Card */}
             {isEditMode && (
               <Dialog open={newRepoOpen} onOpenChange={setNewRepoOpen}>
                 <DialogTrigger asChild>
-                  <div className="group cursor-pointer border-2 border-dashed border-primary/30 hover:border-primary rounded-xl aspect-[4/3] flex flex-col items-center justify-center text-primary transition-colors bg-primary/5 hover:bg-primary/10">
-                    <Folder className="w-12 h-12 mb-2" />
-                    <span className="font-medium">Add New Repository</span>
+                  <div className="group cursor-pointer border-2 border-dashed border-white/30 hover:border-white/60 rounded-2xl aspect-[4/3] flex flex-col items-center justify-center text-white/60 hover:text-white transition-all duration-500 bg-white/5 hover:bg-white/10 backdrop-blur-sm">
+                    <div className="relative">
+                      <Folder className="w-16 h-16 mb-4 group-hover:scale-110 transition-transform duration-300" />
+                      <Plus className="absolute -top-1 -right-1 w-6 h-6 bg-white text-slate-900 rounded-full p-1" />
+                    </div>
+                    <span className="font-medium text-lg">Create New Collection</span>
+                    <p className="text-sm mt-2 text-white/40">Add a new project collection</p>
                   </div>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-[425px] max-h-[90vh] overflow-y-auto">
-                  <DialogTitle>Create New Repository</DialogTitle>
-                  <DialogDescription>Repositories are folders that contain multiple projects.</DialogDescription>
-                  <div className="grid gap-4 py-4">
-                    <div className="grid gap-2">
-                      <Label>Repository Title</Label>
+                <DialogContent className="sm:max-w-[500px] bg-slate-800 border-white/10 max-h-[90vh] overflow-y-auto">
+                  <DialogTitle className="text-white text-2xl">Create New Collection</DialogTitle>
+                  <DialogDescription className="text-white/60">
+                    Collections are folders that organize your projects and work.
+                  </DialogDescription>
+                  <div className="grid gap-6 py-6">
+                    <div className="grid gap-3">
+                      <Label className="text-white/80 text-sm font-medium">Collection Title *</Label>
                       <Input 
                         value={newRepo.title} 
                         onChange={(e) => setNewRepo({...newRepo, title: e.target.value})}
-                        placeholder="e.g. Branding 2025" 
+                        placeholder="e.g. Brand Identity 2024" 
+                        className="bg-slate-700 border-white/10 text-white placeholder-white/40"
                       />
                     </div>
-                    <div className="grid gap-2">
-                      <Label>Category</Label>
+                    <div className="grid gap-3">
+                      <Label className="text-white/80 text-sm font-medium">Category</Label>
                       <select 
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
+                        className="flex h-12 w-full rounded-lg border border-white/10 bg-slate-700 px-4 py-2 text-white text-sm ring-offset-background"
                         value={newRepo.category}
                         onChange={(e) => setNewRepo({...newRepo, category: e.target.value})}
                       >
@@ -509,90 +497,68 @@ export function Portfolio() {
                         ))}
                       </select>
                     </div>
-                    <div className="grid gap-2">
-                      <Label>Cover Image</Label>
-                      
-                      {/* OPTION 1: UPLOAD */}
-                      <div className="border border-border rounded-md p-3 bg-muted/30 mb-2">
-                        <Label className="text-xs text-muted-foreground mb-2 block">Option 1: Upload Image</Label>
-                        <div className="flex gap-2">
-                            <Input 
-                            type="file" 
-                            accept="image/*"
-                            disabled={isUploading}
-                            onChange={async (e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                setIsUploading(true);
-                                try {
-                                    const url = await uploadImageToStorage(file, `covers/${Date.now()}_${file.name}`);
-                                    setNewRepo({...newRepo, coverImage: url});
-                                    setManualRepoImage(""); // Clear manual input if upload succeeds
-                                } catch (err: any) {
-                                    toast({ title: "Upload Error", description: err.message, variant: "destructive" });
-                                } finally {
-                                    setIsUploading(false);
-                                    setUploadProgress("");
-                                }
-                                }
-                            }}
-                            />
-                        </div>
-                        {isUploading && <span className="text-xs text-primary animate-pulse">{uploadProgress}</span>}
-                      </div>
-
-                      {/* OPTION 2: URL PASTE */}
-                      <div className="border border-border rounded-md p-3 bg-muted/30">
-                        <Label className="text-xs text-muted-foreground mb-2 block">Option 2: Paste Image Link</Label>
-                        <div className="flex flex-col gap-2">
-                            <div className="flex gap-2 items-center">
-                                <LinkIcon className="w-4 h-4 text-muted-foreground shrink-0" />
-                                <Input 
-                                    placeholder="https://example.com/image.jpg (Must be direct link)" 
-                                    value={manualRepoImage}
-                                    onChange={(e) => {
-                                        setManualRepoImage(e.target.value);
-                                        setNewRepo({...newRepo, coverImage: ""}); 
-                                    }}
-                                />
-                            </div>
-                            <p className="text-[10px] text-muted-foreground">
-                                Note: Ensure the link ends in .jpg, .png, or .webp and is publicly accessible.
-                            </p>
-                        </div>
+                    <div className="grid gap-3">
+                      <Label className="text-white/80 text-sm font-medium">Cover Image URL *</Label>
+                      <div className="flex flex-col gap-3">
+                          <div className="flex gap-3 items-center">
+                              <LinkIcon className="w-5 h-5 text-white/60 shrink-0" />
+                              <Input 
+                                  placeholder="https://example.com/cover-image.jpg" 
+                                  value={manualRepoImage}
+                                  onChange={(e) => {
+                                      setManualRepoImage(e.target.value);
+                                      setNewRepo({...newRepo, coverImage: e.target.value}); 
+                                  }}
+                                  className="bg-slate-700 border-white/10 text-white placeholder-white/40"
+                              />
+                          </div>
+                          <p className="text-xs text-white/40">
+                              Must be a direct image link ending in .jpg, .png, or .webp
+                          </p>
                       </div>
 
                       {/* PREVIEW */}
-                      {(newRepo.coverImage || manualRepoImage) && (
-                        <div className="mt-2">
-                            <Label className="text-xs text-muted-foreground mb-1 block">Preview</Label>
-                            <div className="relative h-24 w-24">
+                      {manualRepoImage && (
+                        <div className="mt-3">
+                            <Label className="text-white/80 text-sm font-medium mb-2 block">Cover Preview</Label>
+                            <div className="relative h-32 w-full rounded-lg overflow-hidden border border-white/10">
                                 <img 
-                                    src={newRepo.coverImage || manualRepoImage} 
-                                    className="h-full w-full object-cover rounded-md border border-border" 
+                                    src={manualRepoImage} 
+                                    className="h-full w-full object-cover"
                                     onError={(e) => {
                                         e.currentTarget.style.display = 'none';
-                                        e.currentTarget.parentElement?.querySelector('.error-fallback')?.classList.remove('hidden');
+                                        toast({ title: "Invalid Image", description: "The provided URL doesn't contain a valid image.", variant: "destructive" });
                                     }}
                                 />
-                                <div className="error-fallback hidden absolute inset-0 flex items-center justify-center bg-destructive/10 text-destructive text-xs text-center p-1 rounded-md border border-destructive/20">
-                                    Invalid Image Link
-                                </div>
                             </div>
                         </div>
                       )}
                     </div>
-                    <div className="grid gap-2">
-                      <Label>Description</Label>
-                      <Input 
+                    <div className="grid gap-3">
+                      <Label className="text-white/80 text-sm font-medium">Description</Label>
+                      <Textarea 
                         value={newRepo.description}
                         onChange={(e) => setNewRepo({...newRepo, description: e.target.value})}
+                        placeholder="Describe this collection..."
+                        rows={3}
+                        className="bg-slate-700 border-white/10 text-white placeholder-white/40 resize-none"
                       />
                     </div>
                   </div>
-                  <div className="flex justify-end">
-                    <Button onClick={handleAddRepository} disabled={isUploading}>
-                      {isUploading ? "Uploading..." : "Create Repository"}
+                  <div className="flex justify-end gap-3">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => setNewRepoOpen(false)}
+                      className="border-white/20 text-white/80 hover:bg-white/10"
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={handleAddRepository} 
+                      disabled={!newRepo.title || !manualRepoImage}
+                      className="bg-white text-slate-900 hover:bg-white/90"
+                    >
+                      Create Collection
                     </Button>
                   </div>
                 </DialogContent>
@@ -605,7 +571,7 @@ export function Portfolio() {
                   <Button
                     variant="destructive"
                     size="icon"
-                    className="absolute top-2 right-2 z-50 h-8 w-8 rounded-full opacity-100 shadow-lg"
+                    className="absolute top-4 right-4 z-50 h-9 w-9 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg bg-red-500/90 hover:bg-red-500"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleDeleteRepository(repo.id);
@@ -617,16 +583,32 @@ export function Portfolio() {
                 
                 <div 
                   onClick={() => handleRepositoryClick(repo)}
-                  className="cursor-pointer relative overflow-hidden rounded-xl bg-muted aspect-[4/3]"
+                  className="cursor-pointer relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/5 to-white/10 backdrop-blur-sm border border-white/10 hover:border-white/30 transition-all duration-500 group-hover:scale-[1.02]"
                 >
-                  <img 
-                    src={repo.coverImage} 
-                    alt={repo.title} 
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                  />
-                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center text-center p-4">
-                    <Folder className="text-white w-8 h-8 mb-2" />
-                    <h3 className="text-white font-display font-bold text-xl mb-1 translate-y-4 group-hover:translate-y-0 transition-transform duration-300">{repo.title}</h3>
+                  <div className="aspect-[4/3] relative overflow-hidden">
+                    <img 
+                      src={repo.coverImage} 
+                      alt={repo.title} 
+                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                    
+                    {/* Hover Overlay Content */}
+                    <div className="absolute inset-0 flex flex-col justify-end p-6 text-white transform translate-y-4 group-hover:translate-y-0 transition-transform duration-500">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-display font-bold text-xl leading-tight">{repo.title}</h3>
+                        <ExternalLink className="w-5 h-5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                      </div>
+                      <p className="text-white/60 text-sm line-clamp-2">{repo.description}</p>
+                      <div className="flex justify-between items-center mt-3">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full bg-white/20 text-white/80 text-xs font-medium backdrop-blur-sm">
+                          {repo.category}
+                        </span>
+                        <span className="text-white/40 text-sm">
+                          View Projects →
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </FadeIn>
@@ -637,265 +619,298 @@ export function Portfolio() {
 
       {/* VIEW 2: PROJECTS INSIDE REPOSITORY */}
       {!loading && currentView === "projects" && selectedRepo && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-          {/* Add New Project Card */}
-          {isEditMode && (
-            <Dialog open={newProjectOpen} onOpenChange={(open) => {
-              setNewProjectOpen(open);
-              if (!open) {
-                resetNewProjectForm();
-              }
-            }}>
-              <DialogTrigger asChild>
-                <div className="group cursor-pointer border-2 border-dashed border-primary/30 hover:border-primary rounded-xl aspect-[4/3] flex flex-col items-center justify-center text-primary transition-colors bg-primary/5 hover:bg-primary/10">
-                  <ImageIcon className="w-12 h-12 mb-2" />
-                  <span className="font-medium">Add New Project</span>
-                </div>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
-                <DialogTitle>Add Project to {selectedRepo.title}</DialogTitle>
-                <div className="grid gap-4 py-4">
-                  <div className="grid gap-2">
-                    <Label>Project Name *</Label>
-                    <Input 
-                      value={newProject.title} 
-                      onChange={(e) => setNewProject({...newProject, title: e.target.value})}
-                      placeholder="Enter project name"
-                    />
+        <div className="space-y-8">
+          {/* Repository Header */}
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 mb-4">
+              <Folder className="w-4 h-4" />
+              <span className="text-sm text-white/60">{selectedRepo.category}</span>
+            </div>
+            <h2 className="text-4xl md:text-6xl font-display font-bold mb-4 bg-gradient-to-r from-white to-white/80 bg-clip-text text-transparent">
+              {selectedRepo.title}
+            </h2>
+            <p className="text-white/60 text-lg max-w-2xl mx-auto leading-relaxed">
+              {selectedRepo.description}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {/* Add New Project Card */}
+            {isEditMode && (
+              <Dialog open={newProjectOpen} onOpenChange={setNewProjectOpen}>
+                <DialogTrigger asChild>
+                  <div className="group cursor-pointer border-2 border-dashed border-white/30 hover:border-white/60 rounded-2xl aspect-[4/3] flex flex-col items-center justify-center text-white/60 hover:text-white transition-all duration-500 bg-white/5 hover:bg-white/10 backdrop-blur-sm">
+                    <div className="relative">
+                      <ImageIcon className="w-16 h-16 mb-4 group-hover:scale-110 transition-transform duration-300" />
+                      <Plus className="absolute -top-1 -right-1 w-6 h-6 bg-white text-slate-900 rounded-full p-1" />
+                    </div>
+                    <span className="font-medium text-lg">Add New Project</span>
+                    <p className="text-sm mt-2 text-white/40">Add to {selectedRepo.title}</p>
                   </div>
-                  <div className="grid gap-2">
-                    <Label>Description</Label>
-                    <Textarea 
-                      value={newProject.description}
-                      onChange={(e) => setNewProject({...newProject, description: e.target.value})}
-                      placeholder="Describe your project..."
-                      rows={3}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Project Images (Max 7) *</Label>
-                    
-                    {/* OPTION 1: UPLOAD */}
-                    <div className="border border-border rounded-md p-3 bg-muted/30 mb-2">
-                      <Label className="text-xs text-muted-foreground mb-2 block">Option 1: Upload Images</Label>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[600px] bg-slate-800 border-white/10 max-h-[90vh] overflow-y-auto">
+                  <DialogTitle className="text-white text-2xl">Add Project to {selectedRepo.title}</DialogTitle>
+                  <div className="grid gap-6 py-6">
+                    <div className="grid gap-3">
+                      <Label className="text-white/80 text-sm font-medium">Project Name *</Label>
                       <Input 
-                          type="file" 
-                          accept="image/*"
-                          multiple
-                          disabled={isUploading}
-                          onChange={async (e) => {
-                          const files = Array.from(e.target.files || []);
-                          if (files.length > 0) {
-                              setIsUploading(true);
-                              try {
-                              // Limit to 7 images total
-                              const availableSlots = 7 - newProject.images.length;
-                              const filesToUpload = files.slice(0, availableSlots);
-                              
-                              const uploadPromises = filesToUpload.map(file => 
-                                  uploadImageToStorage(file, `projects/${selectedRepo.id}/${Date.now()}_${file.name}`)
-                              );
-                              const urls = await Promise.all(uploadPromises);
-                              setNewProject(prev => ({...prev, images: [...prev.images, ...urls]}));
-                              
-                              if (files.length > availableSlots) {
-                                  toast({ 
-                                    title: "Limit Reached", 
-                                    description: `Only ${availableSlots} images were added. Maximum 7 images allowed.`,
-                                    variant: "default"
-                                  });
-                              }
-                              } catch (err: any) {
-                              toast({ title: "Upload Error", description: err.message, variant: "destructive" });
-                              } finally {
-                              setIsUploading(false);
-                              setUploadProgress("");
-                              }
-                          }
-                          }}
+                        value={newProject.title} 
+                        onChange={(e) => setNewProject({...newProject, title: e.target.value})}
+                        placeholder="Enter project name"
+                        className="bg-slate-700 border-white/10 text-white placeholder-white/40"
                       />
-                      {isUploading && <span className="text-xs text-primary animate-pulse">{uploadProgress}</span>}
                     </div>
-
-                    {/* OPTION 2: PASTE URL */}
-                    <div className="border border-border rounded-md p-3 bg-muted/30">
-                      <Label className="text-xs text-muted-foreground mb-2 block">Option 2: Paste Image Link</Label>
-                      <div className="flex flex-col gap-2">
-                          <div className="flex gap-2">
-                              <Input 
-                                  placeholder="https://example.com/image.jpg"
-                                  value={manualProjectImage}
-                                  onChange={(e) => setManualProjectImage(e.target.value)}
-                                  disabled={newProject.images.length >= 7}
-                              />
-                              <Button 
-                                size="sm" 
-                                variant="secondary" 
-                                onClick={() => {
-                                    if (manualProjectImage && newProject.images.length < 7) {
-                                        setNewProject(prev => ({...prev, images: [...prev.images, manualProjectImage]}));
-                                        setManualProjectImage("");
-                                    } else if (newProject.images.length >= 7) {
-                                        toast({ 
-                                          title: "Limit Reached", 
-                                          description: "Maximum 7 images allowed per project.",
-                                          variant: "destructive" 
-                                        });
-                                    }
-                                }}
-                                disabled={!manualProjectImage || newProject.images.length >= 7}
-                              >
-                                Add
-                              </Button>
-                          </div>
-                          <p className="text-[10px] text-muted-foreground">
-                              Note: Ensure the link ends in .jpg, .png, or .webp and is publicly accessible.
-                          </p>
-                      </div>
+                    <div className="grid gap-3">
+                      <Label className="text-white/80 text-sm font-medium">Description</Label>
+                      <Textarea 
+                        value={newProject.description}
+                        onChange={(e) => setNewProject({...newProject, description: e.target.value})}
+                        placeholder="Describe your project..."
+                        rows={4}
+                        className="bg-slate-700 border-white/10 text-white placeholder-white/40 resize-none"
+                      />
                     </div>
-
-                    {/* IMAGE PREVIEWS */}
-                    {newProject.images.length > 0 && (
-                      <div className="mt-3">
-                        <Label className="text-xs text-muted-foreground mb-2 block">
-                          Selected Images ({newProject.images.length}/7)
+                    <div className="grid gap-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-white/80 text-sm font-medium">
+                          Project Images ({projectImageUrls.filter(url => url.trim() !== "").length}/7) *
                         </Label>
-                        <div className="flex gap-2 overflow-x-auto py-2">
-                          {newProject.images.map((img, i) => (
-                            <div key={i} className="relative shrink-0 h-20 w-20">
-                               <img 
-                                  src={img} 
-                                  className="h-full w-full object-cover rounded-md border border-border" 
-                                  onError={(e) => {
-                                      e.currentTarget.src = "https://placehold.co/100x100?text=Error";
-                                  }}
-                               />
-                               <button 
-                                 onClick={() => setNewProject(prev => ({
-                                   ...prev, 
-                                   images: prev.images.filter((_, idx) => idx !== i)
-                                 }))} 
-                                 className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600 transition-colors"
-                               >
-                                 <X className="w-3 h-3" />
-                               </button>
-                            </div>
-                          ))}
-                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={addImageUrlField}
+                          disabled={projectImageUrls.length >= 7}
+                          className="border-white/20 text-white/80 hover:bg-white/10 h-8 text-xs"
+                        >
+                          <Plus className="w-3 h-3 mr-1" />
+                          Add URL
+                        </Button>
                       </div>
-                    )}
+                      
+                      <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                        {projectImageUrls.map((url, index) => (
+                          <div key={index} className="flex gap-2 items-start">
+                            <div className="flex-1">
+                              <Input
+                                placeholder={`Image URL #${index + 1}`}
+                                value={url}
+                                onChange={(e) => updateImageUrl(index, e.target.value)}
+                                className="bg-slate-700 border-white/10 text-white placeholder-white/40 text-sm"
+                              />
+                            </div>
+                            {projectImageUrls.length > 1 && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                onClick={() => removeImageUrlField(index)}
+                                className="shrink-0 border-white/20 text-white/80 hover:bg-red-500/20 hover:text-red-200 hover:border-red-500/30 h-10 w-10"
+                              >
+                                <Minus className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      
+                      <p className="text-xs text-white/40">
+                        Add up to 7 image URLs. Each URL must be a direct link to an image file.
+                      </p>
+
+                      {/* Image Previews */}
+                      {projectImageUrls.some(url => url.trim() !== "") && (
+                        <div className="mt-4">
+                          <Label className="text-white/80 text-sm font-medium mb-3 block">Image Previews</Label>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            {projectImageUrls.filter(url => url.trim() !== "").map((url, index) => (
+                              <div key={index} className="relative aspect-square rounded-lg overflow-hidden border border-white/10 bg-slate-700">
+                                <img
+                                  src={url}
+                                  alt={`Preview ${index + 1}`}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                                <div className="absolute inset-0 flex items-center justify-center bg-slate-800/80 text-white/40 text-xs text-center p-2 hidden">
+                                  Invalid URL
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => {
-                      setNewProjectOpen(false);
-                      resetNewProjectForm();
+                  <div className="flex justify-end gap-3">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => {
+                        setNewProjectOpen(false);
+                        setProjectImageUrls([""]);
+                      }}
+                      className="border-white/20 text-white/80 hover:bg-white/10"
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={handleAddProject} 
+                      disabled={!newProject.title || projectImageUrls.filter(url => url.trim() !== "").length === 0}
+                      className="bg-white text-slate-900 hover:bg-white/90"
+                    >
+                      Add Project
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+
+            {projects.map((project, index) => (
+              <FadeIn key={project.id} delay={index * 0.1} className="relative group">
+                {isEditMode && (
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="absolute top-4 right-4 z-50 h-9 w-9 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg bg-red-500/90 hover:bg-red-500"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteProject(project.id);
                     }}
                   >
-                    Cancel
+                    <Trash2 className="h-4 w-4" />
                   </Button>
-                  <Button 
-                    onClick={handleAddProject} 
-                    disabled={isUploading || !newProject.title || newProject.images.length === 0}
-                  >
-                    {isUploading ? "Uploading..." : "Add Project"}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          )}
-
-          {projects.map((project, index) => (
-            <FadeIn key={project.id} delay={index * 0.1} className="relative group">
-              {isEditMode && (
-                <Button
-                  variant="destructive"
-                  size="icon"
-                  className="absolute top-2 right-2 z-50 h-8 w-8 rounded-full opacity-100 shadow-lg"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDeleteProject(project.id);
-                  }}
+                )}
+                
+                <div 
+                  onClick={() => handleProjectClick(project)}
+                  className="cursor-pointer relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/5 to-white/10 backdrop-blur-sm border border-white/10 hover:border-white/30 transition-all duration-500 group-hover:scale-[1.02]"
                 >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              )}
-              
-              <div 
-                onClick={() => setSelectedProject(project)}
-                className="cursor-pointer relative overflow-hidden rounded-xl bg-muted aspect-[4/3]"
-              >
-                <img 
-                  src={project.images[0]} 
-                  alt={project.title} 
-                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                />
-                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center text-center p-4">
-                  <h3 className="text-white font-display font-bold text-xl mb-2 translate-y-4 group-hover:translate-y-0 transition-transform duration-300">{project.title}</h3>
+                  <div className="aspect-[4/3] relative overflow-hidden">
+                    <img 
+                      src={project.images[0]} 
+                      alt={project.title} 
+                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                    
+                    {/* Hover Overlay Content */}
+                    <div className="absolute inset-0 flex flex-col justify-end p-6 text-white transform translate-y-4 group-hover:translate-y-0 transition-transform duration-500">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-display font-bold text-xl leading-tight">{project.title}</h3>
+                        <ExternalLink className="w-5 h-5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                      </div>
+                      <p className="text-white/60 text-sm line-clamp-2">{project.description}</p>
+                      <div className="flex justify-between items-center mt-3">
+                        <span className="text-white/40 text-xs">
+                          {project.images.length} image{project.images.length !== 1 ? 's' : ''}
+                        </span>
+                        <span className="text-white/40 text-sm">
+                          View Details →
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </FadeIn>
-          ))}
+              </FadeIn>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* PROJECT DETAIL MODAL - Full Screen */}
-      <Dialog open={!!selectedProject} onOpenChange={(open) => {
-        if (!open) setSelectedProject(null);
-      }}>
-        <DialogContent className="!fixed !inset-0 !left-auto !top-auto !translate-x-0 !translate-y-0 !max-w-none !w-screen !h-screen !p-0 !flex !flex-col !bg-background !border-0 !shadow-none !rounded-none !z-[200] !m-0 !gap-0">
-          {selectedProject && (
-            <div className="flex flex-col h-full w-full overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-white/40">
-              <div className="relative shrink-0 h-64 md:h-96 w-full">
-                 <img 
-                   src={selectedProject.images[0]} 
-                   alt={selectedProject.title} 
-                   className="w-full h-full object-cover"
-                 />
-                 <button 
+      {/* PROJECT DETAIL PAGE - Full Screen Overlay */}
+      {selectedProject && (
+        <div className="fixed inset-0 z-50 bg-slate-900 overflow-y-auto">
+          <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+            {/* Header */}
+            <div className="sticky top-0 z-10 bg-slate-900/80 backdrop-blur-lg border-b border-white/10">
+              <div className="container mx-auto px-6 py-4">
+                <div className="flex items-center justify-between">
+                  <Button 
+                    variant="ghost" 
                     onClick={() => setSelectedProject(null)}
-                    className="absolute top-4 right-4 bg-black/50 hover:bg-black/70 text-white p-2 rounded-full transition-colors"
-                 >
-                    <X className="w-5 h-5" />
-                 </button>
-                 <div className="absolute inset-0 bg-gradient-to-t from-background to-transparent flex flex-col justify-end p-8">
-                   <h2 className="text-3xl font-display font-bold mb-2">{selectedProject.title}</h2>
-                 </div>
-              </div>
-              <div className="p-8">
-                <p className="text-muted-foreground mb-8 text-lg leading-relaxed">
-                  {selectedProject.description}
-                </p>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {selectedProject.images.map((img, i) => (
-                    <img key={i} src={img} className="w-full rounded-lg border border-white/10" />
-                  ))}
-                </div>
-
-                <div className="mt-12 flex justify-end pb-8">
-                  <Button size="lg" onClick={() => {
-                     setSelectedProject(null);
-                     const contactSection = document.getElementById("contact");
-                     if (contactSection) {
-                       contactSection.scrollIntoView({ behavior: "smooth" });
-                       setTimeout(() => {
-                          window.dispatchEvent(new CustomEvent("prefillContact", { 
-                            detail: { subject: `Inquiry about: ${selectedProject.title}` } 
-                          }));
-                       }, 500);
-                     }
-                  }}>
-                    Inquire About This Project
+                    className="text-white/70 hover:text-white hover:bg-white/10 pl-0 group"
+                  >
+                    <ArrowLeft className="mr-2 h-5 w-5 group-hover:-translate-x-1 transition-transform" />
+                    Back to {selectedRepo?.title}
+                  </Button>
+                  
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setSelectedProject(null)}
+                    className="text-white/70 hover:text-white hover:bg-white/10"
+                  >
+                    <X className="h-5 w-5" />
                   </Button>
                 </div>
               </div>
             </div>
-          )}
-        </DialogContent>
-      </Dialog>
+
+            {/* Project Content */}
+            <div className="container mx-auto px-6 py-12">
+              <div className="max-w-6xl mx-auto">
+                {/* Project Header */}
+                <div className="text-center mb-16">
+                  <h1 className="text-5xl md:text-7xl font-display font-bold mb-6 bg-gradient-to-r from-white to-white/80 bg-clip-text text-transparent">
+                    {selectedProject.title}
+                  </h1>
+                  <p className="text-xl text-white/60 leading-relaxed max-w-3xl mx-auto">
+                    {selectedProject.description}
+                  </p>
+                </div>
+
+                {/* Project Images */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
+                  {selectedProject.images.map((image, index) => (
+                    <div 
+                      key={index} 
+                      className="relative group rounded-2xl overflow-hidden border border-white/10 bg-white/5 backdrop-blur-sm hover:border-white/20 transition-all duration-500"
+                    >
+                      <img
+                        src={image}
+                        alt={`${selectedProject.title} - Image ${index + 1}`}
+                        className="w-full h-auto object-cover transition-transform duration-700 group-hover:scale-105"
+                      />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300" />
+                    </div>
+                  ))}
+                </div>
+
+                {/* Project Info & CTA */}
+                <div className="text-center border-t border-white/10 pt-16">
+                  <div className="max-w-2xl mx-auto">
+                    <h3 className="text-2xl font-display font-bold text-white mb-4">
+                      Interested in this project?
+                    </h3>
+                    <p className="text-white/60 mb-8 text-lg">
+                      Let's discuss how we can bring your vision to life.
+                    </p>
+                    <Button 
+                      size="lg" 
+                      onClick={() => {
+                        setSelectedProject(null);
+                        const contactSection = document.getElementById("contact");
+                        if (contactSection) {
+                          contactSection.scrollIntoView({ behavior: "smooth" });
+                          setTimeout(() => {
+                            window.dispatchEvent(new CustomEvent("prefillContact", { 
+                              detail: { subject: `Inquiry about: ${selectedProject.title}` } 
+                            }));
+                          }, 500);
+                        }
+                      }}
+                      className="bg-white text-slate-900 hover:bg-white/90 text-lg px-8 py-6 rounded-full font-semibold transition-all duration-300 hover:scale-105"
+                    >
+                      Start a Conversation
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </Section>
   );
 }
