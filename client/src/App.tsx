@@ -1,29 +1,28 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import Home from './pages/Home';
-import { About } from './components/About';
-import { Contact } from './components/Contact';
-import { PortfolioRepositories } from './components/PortfolioRepositories';
-import { PortfolioProjects } from './components/PortfolioProjects';
-import { PortfolioProjectDetail } from './components/PortfolioProjectDetail';
+import { Switch, Route } from "wouter";
+import { queryClient } from "./lib/queryClient";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import Home from "@/pages/Home";
+import NotFound from "@/pages/not-found";
+
+function Router() {
+  return (
+    <Switch>
+      <Route path="/" component={Home} />
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
 
 function App() {
   return (
-    <Router>
-      <Routes>
-        {/* Your existing routes */}
-        <Route path="/" element={<Home />} />
-        <Route path="/about" element={<About />} />
-        <Route path="/contact" element={<Contact />} />
-        
-        {/* NEW: Separate portfolio routes */}
-        <Route path="/portfolio" element={<PortfolioRepositories />} />
-        <Route path="/portfolio/:repoId" element={<PortfolioProjects />} />
-        <Route path="/portfolio/:repoId/project/:projectId" element={<PortfolioProjectDetail />} />
-        
-        {/* REMOVE or COMMENT OUT the old single portfolio route */}
-        {/* <Route path="/portfolio" element={<Portfolio />} /> */}
-      </Routes>
-    </Router>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Router />
+      </TooltipProvider>
+    </QueryClientProvider>
   );
 }
 
