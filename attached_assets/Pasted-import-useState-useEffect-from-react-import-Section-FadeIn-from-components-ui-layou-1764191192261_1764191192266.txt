@@ -1,0 +1,916 @@
+import { useState, useEffect } from "react";
+import { Section, FadeIn } from "@/components/ui/layout-components";
+import { CATEGORIES } from "@/data/portfolio";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Trash2, Settings, Folder, Image as ImageIcon, ArrowLeft, X, AlertTriangle, Loader2, Link as LinkIcon, ExternalLink, Plus, Minus } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+
+// Firebase Imports
+import { db, storage } from "@/lib/firebase";
+import { 
+  collection, 
+  addDoc, 
+  deleteDoc, 
+  doc, 
+  onSnapshot, 
+  query, 
+  orderBy,
+  serverTimestamp 
+} from "firebase/firestore";
+
+// Types
+export interface Project {
+  id: string;
+  title: string;
+  description: string;
+  images: string[];
+  createdAt: any;
+}
+
+export interface Repository {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  coverImage: string;
+  createdAt: any;
+}
+
+export function Portfolio() {
+  const { toast } = useToast();
+  const [repositories, setRepositories] = useState<Repository[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activeCategory, setActiveCategory] = useState("All");
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [firebaseError, setFirebaseError] = useState<string | null>(null);
+  
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [adminPassword, setAdminPassword] = useState("");
+  
+  // Password Management State
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [currentPasswordInput, setCurrentPasswordInput] = useState("");
+  const [newPasswordInput, setNewPasswordInput] = useState("");
+
+  // Navigation State - SIMPLIFIED
+  const [currentView, setCurrentView] = useState<"repositories" | "projects">("repositories");
+  const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null);
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+
+  // Form States
+  const [authDialogOpen, setAuthDialogOpen] = useState(false);
+  const [newRepoOpen, setNewRepoOpen] = useState(false);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  
+  // Manual Image URL State - ONLY URLS NOW
+  const [manualRepoImage, setManualRepoImage] = useState("");
+  const [projectImageUrls, setProjectImageUrls] = useState<string[]>([""]); // Start with one empty URL
+
+  const handleLogin = () => {
+    const storedPassword = localStorage.getItem("adminPassword") || "usman2006";
+    if (adminPassword === storedPassword) { 
+        setIsAuthenticated(true);
+        setIsEditMode(true);
+        setAuthDialogOpen(false);
+        toast({ title: "Success", description: "Admin mode enabled." });
+    } else {
+        toast({ title: "Error", description: "Invalid password", variant: "destructive" });
+    }
+  };
+
+  const handleChangePassword = () => {
+      const storedPassword = localStorage.getItem("adminPassword") || "usman2006";
+      if (currentPasswordInput !== storedPassword) {
+          toast({ title: "Error", description: "Current password incorrect.", variant: "destructive" });
+          return;
+      }
+      if (newPasswordInput.length < 4) {
+          toast({ title: "Error", description: "New password must be at least 4 characters.", variant: "destructive" });
+          return;
+      }
+      localStorage.setItem("adminPassword", newPasswordInput);
+      toast({ title: "Success", description: "Password updated successfully." });
+      setChangePasswordOpen(false);
+      setCurrentPasswordInput("");
+      setNewPasswordInput("");
+  };
+  
+  const [newRepo, setNewRepo] = useState<Partial<Repository>>({
+    title: "", description: "", category: "Branding", coverImage: ""
+  });
+  
+  const [newProject, setNewProject] = useState<{
+    title: string;
+    description: string;
+  }>({
+    title: "", description: ""
+  });
+
+  // --- Firebase: Listen to Repositories ---
+  useEffect(() => {
+    const q = query(collection(db, "repositories"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(q, 
+      (snapshot) => {
+        const repos = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        } as Repository));
+        setRepositories(repos);
+        setLoading(false);
+        setFirebaseError(null);
+      },
+      (error) => {
+        console.error("Firestore Error:", error);
+        setLoading(false);
+        if (error.code === 'permission-denied') {
+           setFirebaseError("Permission denied. Please enable Firestore Database in your Firebase Console and set rules to 'allow read, write: if true;' for testing.");
+        } else if (error.code === 'unavailable') {
+           console.log("Network unavailable, using cached data if available.");
+        } else {
+           setFirebaseError(`Database Error: ${error.message}`);
+        }
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  // --- Firebase: Listen to Projects (when a repo is selected) ---
+  useEffect(() => {
+    if (!selectedRepo?.id) {
+      setProjects([]);
+      return;
+    }
+
+    const q = query(collection(db, "repositories", selectedRepo.id, "projects"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const projs = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as Project));
+      setProjects(projs);
+    });
+    return () => unsubscribe();
+  }, [selectedRepo?.id]);
+
+  // --- Repository Management ---
+  const handleAddRepository = async () => {
+    const finalCoverImage = manualRepoImage;
+
+    if (!newRepo.title || !finalCoverImage) {
+      toast({ title: "Error", description: "Title and Cover Image URL are required.", variant: "destructive" });
+      return;
+    }
+    
+    try {
+      await addDoc(collection(db, "repositories"), {
+        title: newRepo.title,
+        description: newRepo.description || "",
+        category: newRepo.category || "Branding",
+        coverImage: finalCoverImage,
+        createdAt: serverTimestamp()
+      });
+
+      setNewRepo({ title: "", description: "", category: "Branding", coverImage: "" });
+      setManualRepoImage("");
+      setNewRepoOpen(false);
+      toast({ title: "Success", description: "Repository created." });
+    } catch (error: any) {
+      console.error("Error adding repo: ", error);
+      toast({ title: "Error", description: `Failed to create repository: ${error.message}`, variant: "destructive" });
+    }
+  };
+
+  const handleDeleteRepository = async (id: string) => {
+    if (confirm("Delete this repository? Note: Projects inside might not be deleted automatically.")) {
+      try {
+        await deleteDoc(doc(db, "repositories", id));
+        toast({ title: "Deleted", description: "Repository removed." });
+      } catch (error) {
+        toast({ title: "Error", description: "Failed to delete repository.", variant: "destructive" });
+      }
+    }
+  };
+
+  // --- Project Management ---
+  const handleAddProject = async () => {
+    // Filter out empty URLs and validate
+    const validImageUrls = projectImageUrls.filter(url => url.trim() !== "");
+    
+    if (!newProject.title || validImageUrls.length === 0) {
+      toast({ title: "Error", description: "Title and at least one image URL are required.", variant: "destructive" });
+      return;
+    }
+    
+    if (!selectedRepo?.id) return;
+
+    try {
+      await addDoc(collection(db, "repositories", selectedRepo.id, "projects"), {
+        title: newProject.title,
+        description: newProject.description || "",
+        images: validImageUrls,
+        createdAt: serverTimestamp()
+      });
+
+      setNewProject({ title: "", description: "" });
+      setProjectImageUrls([""]);
+      setNewProjectOpen(false);
+      toast({ title: "Success", description: "Project added to repository." });
+    } catch (error: any) {
+      console.error("Error adding project: ", error);
+      toast({ title: "Error", description: `Failed to add project: ${error.message}`, variant: "destructive" });
+    }
+  };
+
+  const handleDeleteProject = async (projectId: string) => {
+    if (!selectedRepo?.id) return;
+    if (confirm("Delete this project?")) {
+      try {
+        await deleteDoc(doc(db, "repositories", selectedRepo.id, "projects", projectId));
+        toast({ title: "Deleted", description: "Project removed." });
+      } catch (error) {
+        toast({ title: "Error", description: "Failed to delete project.", variant: "destructive" });
+      }
+    }
+  };
+
+  // --- Image URL Management ---
+  const addImageUrlField = () => {
+    if (projectImageUrls.length < 7) {
+      setProjectImageUrls([...projectImageUrls, ""]);
+    }
+  };
+
+  const removeImageUrlField = (index: number) => {
+    if (projectImageUrls.length > 1) {
+      const newUrls = projectImageUrls.filter((_, i) => i !== index);
+      setProjectImageUrls(newUrls);
+    }
+  };
+
+  const updateImageUrl = (index: number, value: string) => {
+    const newUrls = [...projectImageUrls];
+    newUrls[index] = value;
+    setProjectImageUrls(newUrls);
+  };
+
+  // --- Navigation Handlers ---
+  const handleBackToRepositories = () => {
+    setCurrentView("repositories");
+    setSelectedRepo(null);
+    setSelectedProject(null);
+  };
+
+  const handleRepositoryClick = (repo: Repository) => {
+    setSelectedRepo(repo);
+    setCurrentView("projects");
+  };
+
+  const handleProjectClick = (project: Project) => {
+    setSelectedProject(project);
+  };
+
+  // --- Rendering Helpers ---
+  const filteredRepos = activeCategory === "All" 
+    ? repositories 
+    : repositories.filter(r => r.category === activeCategory);
+
+  return (
+    <Section id="portfolio" className="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 rounded-3xl my-20 border border-white/10 shadow-2xl">
+      {/* Header & Controls */}
+      <div className="flex justify-between items-end mb-8">
+        <div>
+          {currentView === "projects" && (
+            <Button 
+              variant="ghost" 
+              onClick={handleBackToRepositories}
+              className="pl-0 hover:bg-transparent hover:text-white mb-2 text-white/70 hover:text-white transition-all duration-300 group"
+            >
+              <ArrowLeft className="mr-2 h-4 w-4 group-hover:-translate-x-1 transition-transform" /> 
+              Back to Collections
+            </Button>
+          )}
+        </div>
+        <div className="flex gap-2">
+            {isEditMode && (
+                <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="text-xs text-white/60 hover:text-white gap-2 transition-colors"
+                    onClick={() => setChangePasswordOpen(true)}
+                >
+                    Change Password
+                </Button>
+            )}
+            <Button 
+            variant="ghost" 
+            size="sm" 
+            className={cn(
+              "text-xs gap-2 transition-all duration-300",
+              isEditMode 
+                ? "text-white bg-white/20 hover:bg-white/30" 
+                : "text-white/60 hover:text-white hover:bg-white/10"
+            )}
+            onClick={() => {
+                if (isEditMode) {
+                    setIsEditMode(false);
+                    setIsAuthenticated(false);
+                } else {
+                    setAuthDialogOpen(true);
+                }
+            }}
+            >
+            <Settings className="w-3 h-3" /> {isEditMode ? "Exit Admin" : "Admin"}
+            </Button>
+        </div>
+
+        {/* Change Password Dialog */}
+        <Dialog open={changePasswordOpen} onOpenChange={setChangePasswordOpen}>
+            <DialogContent className="sm:max-w-[425px] bg-slate-800 border-white/10">
+                <DialogTitle className="text-white">Change Admin Password</DialogTitle>
+                <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                        <Label className="text-white/80">Current Password</Label>
+                        <Input 
+                            type="password" 
+                            value={currentPasswordInput}
+                            onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                            className="bg-slate-700 border-white/10 text-white"
+                        />
+                    </div>
+                    <div className="grid gap-2">
+                        <Label className="text-white/80">New Password</Label>
+                        <Input 
+                            type="password" 
+                            value={newPasswordInput}
+                            onChange={(e) => setNewPasswordInput(e.target.value)}
+                            className="bg-slate-700 border-white/10 text-white"
+                        />
+                    </div>
+                </div>
+                <div className="flex justify-end">
+                    <Button onClick={handleChangePassword} className="bg-white text-slate-900 hover:bg-white/90">
+                        Update Password
+                    </Button>
+                </div>
+            </DialogContent>
+        </Dialog>
+
+        <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
+            <DialogContent className="sm:max-w-[425px] bg-slate-800 border-white/10">
+                <DialogTitle className="text-white">Admin Login</DialogTitle>
+                <div className="grid gap-4 py-4">
+                    <div className="grid gap-2">
+                        <Label className="text-white/80">Password</Label>
+                        <Input 
+                            type="password" 
+                            value={adminPassword}
+                            onChange={(e) => setAdminPassword(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+                            className="bg-slate-700 border-white/10 text-white"
+                        />
+                    </div>
+                </div>
+                <div className="flex justify-end">
+                    <Button onClick={handleLogin} className="bg-white text-slate-900 hover:bg-white/90">
+                        Login
+                    </Button>
+                </div>
+            </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* FIREBASE STATUS / ERRORS */}
+      {firebaseError && (
+         <FadeIn>
+          <div className="bg-red-500/10 border border-red-500/20 text-red-200 p-4 rounded-lg mb-8 text-sm text-center flex flex-col items-center gap-2">
+            <div className="flex items-center gap-2 font-bold">
+              <AlertTriangle className="w-4 h-4" />
+              <span>Database Error</span>
+            </div>
+            <p className="opacity-80 max-w-lg">
+              {firebaseError}
+            </p>
+          </div>
+        </FadeIn>
+      )}
+
+      {/* PROTOTYPE WARNING */}
+      {isEditMode && !firebaseError && (
+        <FadeIn>
+          <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-200 p-4 rounded-lg mb-8 text-sm text-center flex flex-col items-center gap-2">
+            <div className="flex items-center gap-2 font-bold">
+              <Folder className="w-4 h-4" />
+              <span>Admin Mode Active</span>
+            </div>
+            <p className="opacity-80 max-w-lg">
+              You can now manage repositories and projects.
+            </p>
+          </div>
+        </FadeIn>
+      )}
+
+      <FadeIn>
+        <div className="text-center mb-12">
+          <h2 className="text-3xl md:text-5xl font-display font-bold mb-4 bg-gradient-to-r from-white to-white/80 bg-clip-text text-transparent">
+            {currentView === "repositories" ? "Portfolio Collections" : selectedRepo?.title}
+          </h2>
+          <p className="text-white/60 text-lg">
+            {currentView === "repositories" 
+              ? "Curated selection of creative works and projects" 
+              : selectedRepo?.description}
+          </p>
+        </div>
+      </FadeIn>
+
+      {loading && (
+        <div className="flex justify-center py-20">
+          <Loader2 className="w-8 h-8 animate-spin text-white" />
+        </div>
+      )}
+
+      {/* VIEW 1: REPOSITORIES */}
+      {!loading && currentView === "repositories" && (
+        <>
+          <FadeIn delay={0.2}>
+            <div className="flex flex-wrap justify-center gap-3 mb-12">
+              {CATEGORIES.map((category) => (
+                <button
+                  key={category}
+                  onClick={() => setActiveCategory(category)}
+                  className={cn(
+                    "px-6 py-3 rounded-full text-sm font-medium transition-all duration-300 border backdrop-blur-sm",
+                    activeCategory === category 
+                      ? "bg-white text-slate-900 border-white shadow-lg scale-105" 
+                      : "bg-white/10 text-white/80 border-white/20 hover:bg-white/20 hover:text-white hover:scale-105"
+                  )}
+                >
+                  {category}
+                </button>
+              ))}
+            </div>
+          </FadeIn>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {/* Add New Repository Card */}
+            {isEditMode && (
+              <Dialog open={newRepoOpen} onOpenChange={setNewRepoOpen}>
+                <DialogTrigger asChild>
+                  <div className="group cursor-pointer border-2 border-dashed border-white/30 hover:border-white/60 rounded-2xl aspect-[4/3] flex flex-col items-center justify-center text-white/60 hover:text-white transition-all duration-500 bg-white/5 hover:bg-white/10 backdrop-blur-sm">
+                    <div className="relative">
+                      <Folder className="w-16 h-16 mb-4 group-hover:scale-110 transition-transform duration-300" />
+                      <Plus className="absolute -top-1 -right-1 w-6 h-6 bg-white text-slate-900 rounded-full p-1" />
+                    </div>
+                    <span className="font-medium text-lg">Create New Collection</span>
+                    <p className="text-sm mt-2 text-white/40">Add a new project collection</p>
+                  </div>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[500px] bg-slate-800 border-white/10 max-h-[90vh] overflow-y-auto">
+                  <DialogTitle className="text-white text-2xl">Create New Collection</DialogTitle>
+                  <DialogDescription className="text-white/60">
+                    Collections are folders that organize your projects and work.
+                  </DialogDescription>
+                  <div className="grid gap-6 py-6">
+                    <div className="grid gap-3">
+                      <Label className="text-white/80 text-sm font-medium">Collection Title *</Label>
+                      <Input 
+                        value={newRepo.title} 
+                        onChange={(e) => setNewRepo({...newRepo, title: e.target.value})}
+                        placeholder="e.g. Brand Identity 2024" 
+                        className="bg-slate-700 border-white/10 text-white placeholder-white/40"
+                      />
+                    </div>
+                    <div className="grid gap-3">
+                      <Label className="text-white/80 text-sm font-medium">Category</Label>
+                      <select 
+                        className="flex h-12 w-full rounded-lg border border-white/10 bg-slate-700 px-4 py-2 text-white text-sm ring-offset-background"
+                        value={newRepo.category}
+                        onChange={(e) => setNewRepo({...newRepo, category: e.target.value})}
+                      >
+                        {CATEGORIES.filter(c => c !== 'All').map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="grid gap-3">
+                      <Label className="text-white/80 text-sm font-medium">Cover Image URL *</Label>
+                      <div className="flex flex-col gap-3">
+                          <div className="flex gap-3 items-center">
+                              <LinkIcon className="w-5 h-5 text-white/60 shrink-0" />
+                              <Input 
+                                  placeholder="https://example.com/cover-image.jpg" 
+                                  value={manualRepoImage}
+                                  onChange={(e) => {
+                                      setManualRepoImage(e.target.value);
+                                      setNewRepo({...newRepo, coverImage: e.target.value}); 
+                                  }}
+                                  className="bg-slate-700 border-white/10 text-white placeholder-white/40"
+                              />
+                          </div>
+                          <p className="text-xs text-white/40">
+                              Must be a direct image link ending in .jpg, .png, or .webp
+                          </p>
+                      </div>
+
+                      {/* PREVIEW */}
+                      {manualRepoImage && (
+                        <div className="mt-3">
+                            <Label className="text-white/80 text-sm font-medium mb-2 block">Cover Preview</Label>
+                            <div className="relative h-32 w-full rounded-lg overflow-hidden border border-white/10">
+                                <img 
+                                    src={manualRepoImage} 
+                                    className="h-full w-full object-cover"
+                                    onError={(e) => {
+                                        e.currentTarget.style.display = 'none';
+                                        toast({ title: "Invalid Image", description: "The provided URL doesn't contain a valid image.", variant: "destructive" });
+                                    }}
+                                />
+                            </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="grid gap-3">
+                      <Label className="text-white/80 text-sm font-medium">Description</Label>
+                      <Textarea 
+                        value={newRepo.description}
+                        onChange={(e) => setNewRepo({...newRepo, description: e.target.value})}
+                        placeholder="Describe this collection..."
+                        rows={3}
+                        className="bg-slate-700 border-white/10 text-white placeholder-white/40 resize-none"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-3">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => setNewRepoOpen(false)}
+                      className="border-white/20 text-white/80 hover:bg-white/10"
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={handleAddRepository} 
+                      disabled={!newRepo.title || !manualRepoImage}
+                      className="bg-white text-slate-900 hover:bg-white/90"
+                    >
+                      Create Collection
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+
+            {filteredRepos.map((repo, index) => (
+              <FadeIn key={repo.id} delay={index * 0.1} className="relative group">
+                {isEditMode && (
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="absolute top-4 right-4 z-50 h-9 w-9 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg bg-red-500/90 hover:bg-red-500"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteRepository(repo.id);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+                
+                <div 
+                  onClick={() => handleRepositoryClick(repo)}
+                  className="cursor-pointer relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/5 to-white/10 backdrop-blur-sm border border-white/10 hover:border-white/30 transition-all duration-500 group-hover:scale-[1.02]"
+                >
+                  <div className="aspect-[4/3] relative overflow-hidden">
+                    <img 
+                      src={repo.coverImage} 
+                      alt={repo.title} 
+                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                    
+                    {/* Hover Overlay Content */}
+                    <div className="absolute inset-0 flex flex-col justify-end p-6 text-white transform translate-y-4 group-hover:translate-y-0 transition-transform duration-500">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-display font-bold text-xl leading-tight">{repo.title}</h3>
+                        <ExternalLink className="w-5 h-5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                      </div>
+                      <p className="text-white/60 text-sm line-clamp-2">{repo.description}</p>
+                      <div className="flex justify-between items-center mt-3">
+                        <span className="inline-flex items-center px-3 py-1 rounded-full bg-white/20 text-white/80 text-xs font-medium backdrop-blur-sm">
+                          {repo.category}
+                        </span>
+                        <span className="text-white/40 text-sm">
+                          View Projects →
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </FadeIn>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* VIEW 2: PROJECTS INSIDE REPOSITORY */}
+      {!loading && currentView === "projects" && selectedRepo && (
+        <div className="space-y-8">
+          {/* Repository Header */}
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 mb-4">
+              <Folder className="w-4 h-4" />
+              <span className="text-sm text-white/60">{selectedRepo.category}</span>
+            </div>
+            <h2 className="text-4xl md:text-6xl font-display font-bold mb-4 bg-gradient-to-r from-white to-white/80 bg-clip-text text-transparent">
+              {selectedRepo.title}
+            </h2>
+            <p className="text-white/60 text-lg max-w-2xl mx-auto leading-relaxed">
+              {selectedRepo.description}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {/* Add New Project Card */}
+            {isEditMode && (
+              <Dialog open={newProjectOpen} onOpenChange={setNewProjectOpen}>
+                <DialogTrigger asChild>
+                  <div className="group cursor-pointer border-2 border-dashed border-white/30 hover:border-white/60 rounded-2xl aspect-[4/3] flex flex-col items-center justify-center text-white/60 hover:text-white transition-all duration-500 bg-white/5 hover:bg-white/10 backdrop-blur-sm">
+                    <div className="relative">
+                      <ImageIcon className="w-16 h-16 mb-4 group-hover:scale-110 transition-transform duration-300" />
+                      <Plus className="absolute -top-1 -right-1 w-6 h-6 bg-white text-slate-900 rounded-full p-1" />
+                    </div>
+                    <span className="font-medium text-lg">Add New Project</span>
+                    <p className="text-sm mt-2 text-white/40">Add to {selectedRepo.title}</p>
+                  </div>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[600px] bg-slate-800 border-white/10 max-h-[90vh] overflow-y-auto">
+                  <DialogTitle className="text-white text-2xl">Add Project to {selectedRepo.title}</DialogTitle>
+                  <div className="grid gap-6 py-6">
+                    <div className="grid gap-3">
+                      <Label className="text-white/80 text-sm font-medium">Project Name *</Label>
+                      <Input 
+                        value={newProject.title} 
+                        onChange={(e) => setNewProject({...newProject, title: e.target.value})}
+                        placeholder="Enter project name"
+                        className="bg-slate-700 border-white/10 text-white placeholder-white/40"
+                      />
+                    </div>
+                    <div className="grid gap-3">
+                      <Label className="text-white/80 text-sm font-medium">Description</Label>
+                      <Textarea 
+                        value={newProject.description}
+                        onChange={(e) => setNewProject({...newProject, description: e.target.value})}
+                        placeholder="Describe your project..."
+                        rows={4}
+                        className="bg-slate-700 border-white/10 text-white placeholder-white/40 resize-none"
+                      />
+                    </div>
+                    <div className="grid gap-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-white/80 text-sm font-medium">
+                          Project Images ({projectImageUrls.filter(url => url.trim() !== "").length}/7) *
+                        </Label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={addImageUrlField}
+                          disabled={projectImageUrls.length >= 7}
+                          className="border-white/20 text-white/80 hover:bg-white/10 h-8 text-xs"
+                        >
+                          <Plus className="w-3 h-3 mr-1" />
+                          Add URL
+                        </Button>
+                      </div>
+                      
+                      <div className="space-y-3 max-h-60 overflow-y-auto pr-2">
+                        {projectImageUrls.map((url, index) => (
+                          <div key={index} className="flex gap-2 items-start">
+                            <div className="flex-1">
+                              <Input
+                                placeholder={`Image URL #${index + 1}`}
+                                value={url}
+                                onChange={(e) => updateImageUrl(index, e.target.value)}
+                                className="bg-slate-700 border-white/10 text-white placeholder-white/40 text-sm"
+                              />
+                            </div>
+                            {projectImageUrls.length > 1 && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="icon"
+                                onClick={() => removeImageUrlField(index)}
+                                className="shrink-0 border-white/20 text-white/80 hover:bg-red-500/20 hover:text-red-200 hover:border-red-500/30 h-10 w-10"
+                              >
+                                <Minus className="w-4 h-4" />
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      
+                      <p className="text-xs text-white/40">
+                        Add up to 7 image URLs. Each URL must be a direct link to an image file.
+                      </p>
+
+                      {/* Image Previews */}
+                      {projectImageUrls.some(url => url.trim() !== "") && (
+                        <div className="mt-4">
+                          <Label className="text-white/80 text-sm font-medium mb-3 block">Image Previews</Label>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            {projectImageUrls.filter(url => url.trim() !== "").map((url, index) => (
+                              <div key={index} className="relative aspect-square rounded-lg overflow-hidden border border-white/10 bg-slate-700">
+                                <img
+                                  src={url}
+                                  alt={`Preview ${index + 1}`}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                                <div className="absolute inset-0 flex items-center justify-center bg-slate-800/80 text-white/40 text-xs text-center p-2 hidden">
+                                  Invalid URL
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-3">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => {
+                        setNewProjectOpen(false);
+                        setProjectImageUrls([""]);
+                      }}
+                      className="border-white/20 text-white/80 hover:bg-white/10"
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={handleAddProject} 
+                      disabled={!newProject.title || projectImageUrls.filter(url => url.trim() !== "").length === 0}
+                      className="bg-white text-slate-900 hover:bg-white/90"
+                    >
+                      Add Project
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+
+            {projects.map((project, index) => (
+              <FadeIn key={project.id} delay={index * 0.1} className="relative group">
+                {isEditMode && (
+                  <Button
+                    variant="destructive"
+                    size="icon"
+                    className="absolute top-4 right-4 z-50 h-9 w-9 rounded-full opacity-0 group-hover:opacity-100 transition-all duration-300 shadow-lg bg-red-500/90 hover:bg-red-500"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteProject(project.id);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+                
+                <div 
+                  onClick={() => handleProjectClick(project)}
+                  className="cursor-pointer relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/5 to-white/10 backdrop-blur-sm border border-white/10 hover:border-white/30 transition-all duration-500 group-hover:scale-[1.02]"
+                >
+                  <div className="aspect-[4/3] relative overflow-hidden">
+                    <img 
+                      src={project.images[0]} 
+                      alt={project.title} 
+                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                    
+                    {/* Hover Overlay Content */}
+                    <div className="absolute inset-0 flex flex-col justify-end p-6 text-white transform translate-y-4 group-hover:translate-y-0 transition-transform duration-500">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-display font-bold text-xl leading-tight">{project.title}</h3>
+                        <ExternalLink className="w-5 h-5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                      </div>
+                      <p className="text-white/60 text-sm line-clamp-2">{project.description}</p>
+                      <div className="flex justify-between items-center mt-3">
+                        <span className="text-white/40 text-xs">
+                          {project.images.length} image{project.images.length !== 1 ? 's' : ''}
+                        </span>
+                        <span className="text-white/40 text-sm">
+                          View Details →
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </FadeIn>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* PROJECT DETAIL PAGE - Full Screen Overlay */}
+      {selectedProject && (
+        <div className="fixed inset-0 z-50 bg-slate-900 overflow-y-auto">
+          <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900">
+            {/* Header */}
+            <div className="sticky top-0 z-10 bg-slate-900/80 backdrop-blur-lg border-b border-white/10">
+              <div className="container mx-auto px-6 py-4">
+                <div className="flex items-center justify-between">
+                  <Button 
+                    variant="ghost" 
+                    onClick={() => setSelectedProject(null)}
+                    className="text-white/70 hover:text-white hover:bg-white/10 pl-0 group"
+                  >
+                    <ArrowLeft className="mr-2 h-5 w-5 group-hover:-translate-x-1 transition-transform" />
+                    Back to {selectedRepo?.title}
+                  </Button>
+                  
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setSelectedProject(null)}
+                    className="text-white/70 hover:text-white hover:bg-white/10"
+                  >
+                    <X className="h-5 w-5" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Project Content */}
+            <div className="container mx-auto px-6 py-12">
+              <div className="max-w-6xl mx-auto">
+                {/* Project Header */}
+                <div className="text-center mb-16">
+                  <h1 className="text-5xl md:text-7xl font-display font-bold mb-6 bg-gradient-to-r from-white to-white/80 bg-clip-text text-transparent">
+                    {selectedProject.title}
+                  </h1>
+                  <p className="text-xl text-white/60 leading-relaxed max-w-3xl mx-auto">
+                    {selectedProject.description}
+                  </p>
+                </div>
+
+                {/* Project Images */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-16">
+                  {selectedProject.images.map((image, index) => (
+                    <div 
+                      key={index} 
+                      className="relative group rounded-2xl overflow-hidden border border-white/10 bg-white/5 backdrop-blur-sm hover:border-white/20 transition-all duration-500"
+                    >
+                      <img
+                        src={image}
+                        alt={`${selectedProject.title} - Image ${index + 1}`}
+                        className="w-full h-auto object-cover transition-transform duration-700 group-hover:scale-105"
+                      />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300" />
+                    </div>
+                  ))}
+                </div>
+
+                {/* Project Info & CTA */}
+                <div className="text-center border-t border-white/10 pt-16">
+                  <div className="max-w-2xl mx-auto">
+                    <h3 className="text-2xl font-display font-bold text-white mb-4">
+                      Interested in this project?
+                    </h3>
+                    <p className="text-white/60 mb-8 text-lg">
+                      Let's discuss how we can bring your vision to life.
+                    </p>
+                    <Button 
+                      size="lg" 
+                      onClick={() => {
+                        setSelectedProject(null);
+                        const contactSection = document.getElementById("contact");
+                        if (contactSection) {
+                          contactSection.scrollIntoView({ behavior: "smooth" });
+                          setTimeout(() => {
+                            window.dispatchEvent(new CustomEvent("prefillContact", { 
+                              detail: { subject: `Inquiry about: ${selectedProject.title}` } 
+                            }));
+                          }, 500);
+                        }
+                      }}
+                      className="bg-white text-slate-900 hover:bg-white/90 text-lg px-8 py-6 rounded-full font-semibold transition-all duration-300 hover:scale-105"
+                    >
+                      Start a Conversation
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </Section>
+  );
+}
