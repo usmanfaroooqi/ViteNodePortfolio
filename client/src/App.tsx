@@ -1,28 +1,24 @@
-import { Switch, Route } from "wouter";
-import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { Toaster } from "@/components/ui/toaster";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import Home from "@/pages/Home";
-import NotFound from "@/pages/not-found";
-
-function Router() {
-  return (
-    <Switch>
-      <Route path="/" component={Home} />
-      <Route component={NotFound} />
-    </Switch>
-  );
-}
+// In your App.js or App.tsx
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Home from './pages/Home';
+import { Portfolio } from './components/Portfolio';
+import { PortfolioRepositories } from './components/PortfolioRepositories';
+import { PortfolioProjects } from './components/PortfolioProjects';
+import { PortfolioProjectDetail } from './components/PortfolioProjectDetail';
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Router />
-      </TooltipProvider>
-    </QueryClientProvider>
+    <Router>
+      <Routes>
+        {/* Your existing routes */}
+        <Route path="/" element={<Home />} />
+        
+        {/* ADD THESE PORTFOLIO ROUTES */}
+        <Route path="/portfolio" element={<PortfolioRepositories />} />
+        <Route path="/portfolio/:repoId" element={<PortfolioProjects />} />
+        <Route path="/portfolio/:repoId/project/:projectId" element={<PortfolioProjectDetail />} />
+      </Routes>
+    </Router>
   );
 }
 
