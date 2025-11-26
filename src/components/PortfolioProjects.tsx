@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle } from "@/components/ui/dialog";
-import { Trash2, Settings, Folder, Image as ImageIcon, ArrowLeft, Plus, Minus, Link as LinkIcon } from "lucide-react";
+import { Trash2, Settings, Folder, Image as ImageIcon, ArrowLeft, Plus, Minus, Link as LinkIcon, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp } from "firebase/firestore";
